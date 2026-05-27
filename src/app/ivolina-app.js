@@ -1,5 +1,5 @@
 // ===============================================================
-// IVOLINA — vanilla JS app body, mounted by page.js
+// IVOLINA v2 — adds profile avatars on home/answers + per-question chat
 // ===============================================================
 import { createClient } from '@supabase/supabase-js';
 
@@ -108,8 +108,11 @@ const MOCK_EVENTS = [
 ];
 
 const PASSWORDS = { ivo: 'nikivo7', nikolina: 'nikolinaiivo777' };
+const STORAGE_BUCKET = 'ivolina';
 
-// ----- Storage layer: Supabase shared, localStorage for per-device -----
+// ===============================================================
+// STORAGE LAYER
+// ===============================================================
 async function dbGet(key) {
   if (!supabase) return null;
   const { data } = await supabase.from('kv').select('value').eq('key', key).maybeSingle();
@@ -126,6 +129,57 @@ function lsSet(key, value) {
   try { localStorage.setItem('ivolina_' + key, value); } catch {}
 }
 
+// Upload an image file (or data URL) to Supabase Storage and return its public URL.
+async function uploadImage(fileOrDataUrl, prefix = 'img') {
+  if (!supabase) return null;
+  let blob;
+  if (typeof fileOrDataUrl === 'string') {
+    // it's a data URL
+    const res = await fetch(fileOrDataUrl);
+    blob = await res.blob();
+  } else {
+    blob = fileOrDataUrl;
+  }
+  const ext = (blob.type && blob.type.split('/')[1]) || 'jpg';
+  const path = `${prefix}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
+  const { error } = await supabase.storage.from(STORAGE_BUCKET).upload(path, blob, {
+    contentType: blob.type || 'image/jpeg',
+    upsert: false,
+  });
+  if (error) {
+    console.error('upload error', error);
+    return null;
+  }
+  const { data } = supabase.storage.from(STORAGE_BUCKET).getPublicUrl(path);
+  return data.publicUrl;
+}
+
+// Resize an image File or data URL to a max dimension, return JPEG data URL.
+function resizeImageToDataUrl(file, maxDim = 1600, quality = 0.82) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = reject;
+    reader.onload = () => {
+      const img = new Image();
+      img.onerror = reject;
+      img.onload = () => {
+        let { width, height } = img;
+        if (width > maxDim || height > maxDim) {
+          if (width > height) { height = Math.round(height * maxDim / width); width = maxDim; }
+          else { width = Math.round(width * maxDim / height); height = maxDim; }
+        }
+        const c = document.createElement('canvas');
+        c.width = width; c.height = height;
+        const ctx = c.getContext('2d');
+        ctx.drawImage(img, 0, 0, width, height);
+        resolve(c.toDataURL('image/jpeg', quality));
+      };
+      img.src = reader.result;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
 const state = {
   user: null,
   profile: { ivo: null, nikolina: null },
@@ -139,10 +193,13 @@ const state = {
   drawCanvas: null,
   drawCtx: null,
   questionPreviewCache: null,
+  // chat
+  currentQuestionId: null,
+  messagesByQuestion: {},   // questionId -> array
 };
 
 // ===============================================================
-// CSS — same as artifact
+// CSS (unchanged from v1 + small additions for avatars, chat)
 // ===============================================================
 const CSS = `
 :root {
@@ -187,6 +244,7 @@ input, textarea { -webkit-user-select: text; user-select: text; }
 @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
 @keyframes slideUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
 @keyframes pulse { 0%,100% { transform: scale(1); opacity: 1; } 50% { transform: scale(1.05); opacity: 0.9; } }
+@keyframes heartPop { 0% { transform: scale(0); opacity: 0; } 60% { transform: scale(1.3); opacity: 1; } 100% { transform: scale(1); opacity: 1; } }
 @keyframes spin { to { transform: rotate(360deg); } }
 
 #screen-login { display: none; flex-direction: column; align-items: center; justify-content: center; padding: 40px 24px; text-align: center; }
@@ -207,7 +265,7 @@ input, textarea { -webkit-user-select: text; user-select: text; }
 .modal-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,0.7); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); display: none; align-items: flex-end; justify-content: center; z-index: 100; animation: fadeIn 0.3s ease; }
 .modal-backdrop.active { display: flex; }
 @media (min-width: 500px) { .modal-backdrop { align-items: center; } }
-.modal { background: var(--bg-2); border: 1px solid var(--glass-border); border-radius: 32px 32px 0 0; padding: 32px 24px calc(32px + env(safe-area-inset-bottom)); width: 100%; max-width: 480px; animation: slideUp 0.4s cubic-bezier(0.16,1,0.3,1); }
+.modal { background: var(--bg-2); border: 1px solid var(--glass-border); border-radius: 32px 32px 0 0; padding: 32px 24px calc(32px + env(safe-area-inset-bottom)); width: 100%; max-width: 480px; animation: slideUp 0.4s cubic-bezier(0.16,1,0.3,1); max-height: 90vh; overflow-y: auto; }
 @media (min-width: 500px) { .modal { border-radius: 32px; margin: 20px; } }
 .modal-handle { width: 40px; height: 4px; background: rgba(255,255,255,0.2); border-radius: 2px; margin: 0 auto 24px; }
 .modal h2 { font-family: 'Fraunces', serif; font-size: 26px; margin-bottom: 8px; text-align: center; }
@@ -226,10 +284,15 @@ textarea.input { resize: none; min-height: 100px; line-height: 1.5; }
 .app-header h1 { font-family: 'Fraunces', serif; font-weight: 500; font-size: 22px; flex: 1; }
 .app-content { padding: 8px 20px 100px; }
 
-.home-hero { padding: 12px 4px 28px; }
-.greeting { font-size: 14px; color: var(--text-dim); margin-bottom: 4px; }
-.greeting-name { font-family: 'Fraunces', serif; font-size: 36px; font-weight: 400; line-height: 1.1; background: linear-gradient(135deg, var(--accent) 0%, color-mix(in srgb, var(--accent) 60%, #fff) 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
-.greeting-sub { font-family: 'Fraunces', serif; font-style: italic; color: var(--text-dim); font-size: 15px; margin-top: 8px; }
+/* NEW: home header with avatar */
+.home-hero { padding: 12px 4px 28px; display: flex; align-items: center; gap: 16px; }
+.home-hero-avatar { width: 64px; height: 64px; border-radius: 50%; background: linear-gradient(135deg, var(--accent), var(--accent-soft)); display: flex; align-items: center; justify-content: center; font-family: 'Fraunces', serif; font-size: 28px; color: white; overflow: hidden; flex-shrink: 0; box-shadow: 0 8px 24px color-mix(in srgb, var(--accent) 30%, transparent); cursor: pointer; }
+.home-hero-avatar img { width: 100%; height: 100%; object-fit: cover; }
+.home-hero-text { flex: 1; min-width: 0; }
+.greeting { font-size: 13px; color: var(--text-dim); margin-bottom: 2px; }
+.greeting-name { font-family: 'Fraunces', serif; font-size: 30px; font-weight: 400; line-height: 1.1; background: linear-gradient(135deg, var(--accent) 0%, color-mix(in srgb, var(--accent) 60%, #fff) 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
+.greeting-sub { font-family: 'Fraunces', serif; font-style: italic; color: var(--text-dim); font-size: 13px; margin-top: 4px; }
+
 .coins-bar { display: flex; align-items: center; justify-content: space-between; background: var(--glass); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); border: 1px solid var(--glass-border); border-radius: 20px; padding: 14px 18px; margin-bottom: 24px; }
 .coins-display { display: flex; align-items: center; gap: 8px; font-weight: 600; }
 .coin-icon { width: 28px; height: 28px; border-radius: 50%; background: linear-gradient(135deg, #ffd56b, #f5a623); display: flex; align-items: center; justify-content: center; font-size: 14px; box-shadow: 0 2px 8px rgba(245,166,35,0.3); }
@@ -246,52 +309,16 @@ textarea.input { resize: none; min-height: 100px; line-height: 1.5; }
 .feature-card.full { grid-column: 1 / -1; aspect-ratio: auto; padding: 24px; min-height: 130px; }
 .feature-card.full .feature-title { font-size: 22px; }
 
-/* Drawing preview card */
-.feature-card.drawing-preview {
-  grid-column: 1 / -1;
-  aspect-ratio: auto;
-  padding: 16px;
-  display: flex;
-  flex-direction: row;
-  align-items: center;
-  gap: 16px;
-}
-.drawing-preview-img {
-  width: 88px;
-  height: 88px;
-  border-radius: 16px;
-  background: #fff;
-  overflow: hidden;
-  flex-shrink: 0;
-}
+.feature-card.drawing-preview { grid-column: 1 / -1; aspect-ratio: auto; padding: 16px; display: flex; flex-direction: row; align-items: center; gap: 16px; }
+.drawing-preview-img { width: 88px; height: 88px; border-radius: 16px; background: #fff; overflow: hidden; flex-shrink: 0; }
 .drawing-preview-img img { width: 100%; height: 100%; object-fit: cover; }
 .drawing-preview-info { flex: 1; min-width: 0; }
 .drawing-preview-info .feature-title { font-size: 18px; }
 .drawing-preview-meta { font-size: 11px; color: var(--text-muted); margin-top: 4px; }
-
-/* Questions preview card with rotating snippets */
-.feature-card.questions-preview {
-  grid-column: 1 / -1;
-  aspect-ratio: auto;
-  padding: 22px;
-  min-height: 160px;
-}
+.feature-card.questions-preview { grid-column: 1 / -1; aspect-ratio: auto; padding: 22px; min-height: 160px; }
 .questions-preview-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
 .questions-preview-list { display: flex; flex-direction: column; gap: 6px; }
-.questions-preview-item {
-  font-family: 'Fraunces', serif;
-  font-style: italic;
-  font-size: 13px;
-  color: var(--text-dim);
-  padding: 6px 10px;
-  background: rgba(255,255,255,0.03);
-  border-radius: 10px;
-  border-left: 2px solid var(--accent);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  animation: fadeIn 0.6s ease;
-}
+.questions-preview-item { font-family: 'Fraunces', serif; font-style: italic; font-size: 13px; color: var(--text-dim); padding: 6px 10px; background: rgba(255,255,255,0.03); border-radius: 10px; border-left: 2px solid var(--accent); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; animation: fadeIn 0.6s ease; }
 
 .counter-card { background: var(--glass); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); border: 1px solid var(--glass-border); border-radius: 28px; padding: 28px 20px; text-align: center; margin-bottom: 20px; position: relative; overflow: hidden; }
 .counter-card::before { content: ''; position: absolute; inset: 0; background: radial-gradient(circle at 50% 0%, var(--accent) 0%, transparent 70%); opacity: 0.15; pointer-events: none; }
@@ -328,8 +355,18 @@ textarea.input { resize: none; min-height: 100px; line-height: 1.5; }
 .filter-tab { background: var(--glass); border: 1px solid var(--glass-border); color: var(--text-dim); padding: 8px 14px; border-radius: 100px; font-size: 13px; font-weight: 500; cursor: pointer; white-space: nowrap; font-family: inherit; }
 .filter-tab.active { background: var(--accent); color: #0A0612; border-color: var(--accent); }
 
+/* NEW: avatars next to question/answer */
+.tiny-avatar { width: 28px; height: 28px; border-radius: 50%; background: linear-gradient(135deg, var(--avc, var(--accent)), var(--accent-soft)); display: inline-flex; align-items: center; justify-content: center; font-family: 'Fraunces', serif; font-size: 12px; color: white; overflow: hidden; flex-shrink: 0; }
+.tiny-avatar img { width: 100%; height: 100%; object-fit: cover; }
+.tiny-avatar.ivo { --avc: var(--ivo); }
+.tiny-avatar.niki { --avc: var(--niki); }
+.med-avatar { width: 36px; height: 36px; border-radius: 50%; background: linear-gradient(135deg, var(--avc, var(--accent)), var(--accent-soft)); display: inline-flex; align-items: center; justify-content: center; font-family: 'Fraunces', serif; font-size: 14px; color: white; overflow: hidden; flex-shrink: 0; }
+.med-avatar img { width: 100%; height: 100%; object-fit: cover; }
+.med-avatar.ivo { --avc: var(--ivo); }
+.med-avatar.niki { --avc: var(--niki); }
+
 .answer-block { background: rgba(255,255,255,0.04); border-radius: 18px; padding: 16px 18px; margin-bottom: 12px; border-left: 3px solid var(--accent); }
-.answer-author { font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 6px; display: flex; align-items: center; gap: 6px; }
+.answer-author { font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 6px; display: flex; align-items: center; gap: 8px; }
 .answer-text { font-family: 'Fraunces', serif; font-size: 16px; line-height: 1.5; }
 .locked-block { text-align: center; padding: 24px; color: var(--text-muted); font-style: italic; font-family: 'Fraunces', serif; }
 .preset-list { max-height: 50vh; overflow-y: auto; -webkit-overflow-scrolling: touch; margin-bottom: 16px; border-radius: 16px; background: rgba(255,255,255,0.03); }
@@ -365,10 +402,34 @@ textarea.input { resize: none; min-height: 100px; line-height: 1.5; }
 .config-error { padding: 40px 24px; text-align: center; color: var(--text-dim); font-family: 'Fraunces', serif; }
 .config-error h2 { font-size: 28px; margin-bottom: 16px; color: var(--text); }
 .config-error code { background: rgba(255,255,255,0.06); padding: 2px 8px; border-radius: 6px; font-family: monospace; font-size: 13px; }
+
+/* ===== CHAT ===== */
+.chat-divider { text-align: center; margin: 28px 0 16px; font-family: 'Fraunces', serif; font-style: italic; color: var(--text-muted); font-size: 13px; display: flex; align-items: center; gap: 10px; }
+.chat-divider::before, .chat-divider::after { content: ''; flex: 1; height: 1px; background: var(--glass-border); }
+
+.chat-list { display: flex; flex-direction: column; gap: 8px; margin-bottom: 16px; }
+.chat-msg { display: flex; gap: 10px; max-width: 88%; }
+.chat-msg.mine { align-self: flex-end; flex-direction: row-reverse; }
+.chat-bubble { background: var(--glass); border: 1px solid var(--glass-border); border-radius: 18px; padding: 10px 14px; font-size: 15px; line-height: 1.4; word-wrap: break-word; overflow-wrap: break-word; position: relative; min-width: 60px; }
+.chat-msg.mine .chat-bubble { background: linear-gradient(135deg, color-mix(in srgb, var(--accent) 80%, transparent), color-mix(in srgb, var(--accent-soft) 80%, transparent)); color: #0A0612; border-color: transparent; }
+.chat-bubble.image-bubble { padding: 4px; }
+.chat-bubble img { display: block; max-width: 240px; max-height: 320px; border-radius: 14px; }
+.chat-msg-meta { font-size: 10px; color: var(--text-muted); margin-top: 4px; display: flex; align-items: center; gap: 6px; }
+.chat-msg.mine .chat-msg-meta { justify-content: flex-end; }
+.chat-msg-col { display: flex; flex-direction: column; min-width: 0; }
+.heart-mark { position: absolute; bottom: -8px; right: -6px; width: 20px; height: 20px; background: var(--bg-2); border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 11px; animation: heartPop 0.4s cubic-bezier(0.16,1,0.3,1); }
+.chat-msg.mine .heart-mark { right: auto; left: -6px; }
+
+.chat-composer { position: sticky; bottom: 12px; display: flex; gap: 8px; align-items: flex-end; background: var(--bg-2); border: 1px solid var(--glass-border); border-radius: 24px; padding: 8px; backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); }
+.chat-input { flex: 1; background: transparent; border: none; color: var(--text); font-family: inherit; font-size: 15px; padding: 10px 12px; resize: none; min-height: 24px; max-height: 120px; outline: none; }
+.chat-attach-btn { width: 40px; height: 40px; border-radius: 50%; background: rgba(255,255,255,0.05); border: 1px solid var(--glass-border); color: var(--text); cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 18px; flex-shrink: 0; }
+.chat-send-btn { width: 40px; height: 40px; border-radius: 50%; background: linear-gradient(135deg, var(--accent), var(--accent-soft)); color: #0A0612; border: none; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 18px; flex-shrink: 0; font-weight: 700; }
+.chat-send-btn:disabled { opacity: 0.4; cursor: default; }
+.chat-uploading { padding: 8px 12px; color: var(--text-muted); font-size: 12px; font-style: italic; font-family: 'Fraunces', serif; }
 `;
 
 // ===============================================================
-// HTML
+// HTML SHELL
 // ===============================================================
 const HTML = `
 <div id="screen-login" class="screen">
@@ -401,9 +462,12 @@ const HTML = `
 <div id="screen-home" class="screen">
   <div class="app-content">
     <div class="home-hero">
-      <div class="greeting">welcome back,</div>
-      <div class="greeting-name" id="homeName">—</div>
-      <div class="greeting-sub" id="homeSub">a little world, just for two</div>
+      <div class="home-hero-avatar" id="homeAvatar">—</div>
+      <div class="home-hero-text">
+        <div class="greeting">welcome back,</div>
+        <div class="greeting-name" id="homeName">—</div>
+        <div class="greeting-sub" id="homeSub">a little world, just for two</div>
+      </div>
     </div>
     <div class="coins-bar">
       <div class="coins-display">
@@ -518,7 +582,7 @@ const HTML = `
       <div class="settings-row" id="logoutRow"><span class="settings-label" style="color: #ff95a5;">logout</span><span class="settings-value">›</span></div>
     </div>
     <div style="text-align: center; margin-top: 32px; color: var(--text-muted); font-size: 12px; font-family: 'Fraunces', serif; font-style: italic;">
-      ivolina v1 · made with love
+      ivolina v2 · made with love
     </div>
   </div>
 </div>
@@ -528,11 +592,23 @@ const HTML = `
 `;
 
 // ===============================================================
-// LOGIC
+// HELPERS
 // ===============================================================
 function escapeHtml(s) {
   if (s == null) return '';
   return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+// Returns HTML for an avatar img/initial. cls = 'tiny' or 'med' etc.
+function avatarHtml(who, size = 'tiny') {
+  const profile = state.profile[who];
+  const initial = who === 'ivo' ? 'I' : 'N';
+  const classWho = who === 'ivo' ? 'ivo' : 'niki';
+  const cls = size === 'tiny' ? 'tiny-avatar' : 'med-avatar';
+  if (profile?.avatar) {
+    return `<span class="${cls} ${classWho}"><img src="${profile.avatar}" alt=""></span>`;
+  }
+  return `<span class="${cls} ${classWho}">${initial}</span>`;
 }
 
 function showScreen(name) {
@@ -550,6 +626,11 @@ function showScreen(name) {
     d.textContent = state.user === 'ivo' ? 'I' : 'N';
     const p = state.profile[state.user];
     document.getElementById('setupNameInput').value = p?.name || '';
+    if (p?.avatar) d.innerHTML = `<img src="${p.avatar}">`;
+  }
+  // Leaving a question detail screen: stop watching its chat
+  if (name !== 'questionDetail') {
+    stopChatSubscription();
   }
 }
 
@@ -600,17 +681,23 @@ function logout() {
   });
 }
 
+// ----- SETUP -----
 let pendingAvatar = null;
-function handleSetupAvatar(e) {
+async function handleSetupAvatar(e) {
   const f = e.target.files[0];
   if (!f) return;
-  const reader = new FileReader();
-  reader.onload = () => {
-    pendingAvatar = reader.result;
+  // Resize for speed
+  try {
+    const resized = await resizeImageToDataUrl(f, 600, 0.85);
+    // Upload to storage; if it fails, keep the data URL as fallback
+    const url = await uploadImage(resized, 'avatars');
+    pendingAvatar = url || resized;
     const d = document.getElementById('setupAvatarDisplay');
-    d.innerHTML = `<img src="${reader.result}">`;
-  };
-  reader.readAsDataURL(f);
+    d.innerHTML = `<img src="${pendingAvatar}">`;
+  } catch (err) {
+    console.error(err);
+    toast('could not load photo');
+  }
 }
 
 async function finishSetup() {
@@ -626,7 +713,6 @@ async function finishSetup() {
 
 // ----- HOME -----
 function pickQuestionPreviews() {
-  // Pick 3 random questions, cache for 30s to avoid jumpy rotations.
   const now = Date.now();
   if (state.questionPreviewCache && now - state.questionPreviewCache.t < 30000) {
     return state.questionPreviewCache.qs;
@@ -639,20 +725,21 @@ function pickQuestionPreviews() {
 function renderHome() {
   const p = state.profile[state.user];
   document.getElementById('homeName').textContent = p?.name || '';
+
+  // Avatar on home
+  const avEl = document.getElementById('homeAvatar');
+  if (p?.avatar) avEl.innerHTML = `<img src="${p.avatar}">`;
+  else avEl.textContent = state.user === 'ivo' ? 'I' : 'N';
+  avEl.onclick = () => showScreen('settings');
+
   document.getElementById('coinsCount').textContent = state.coins[state.user].toLocaleString();
   updateCheckinButton();
 
-  // Build feature grid dynamically (so we can include preview cards)
   const grid = document.getElementById('featureGrid');
   const elapsed = elapsedFromStart();
   const previews = pickQuestionPreviews();
-  const previewsHtml = previews.map(q =>
-    `<div class="questions-preview-item">${escapeHtml(q)}</div>`
-  ).join('');
-
-  const latestDrawing = state.drawings.length
-    ? [...state.drawings].sort((a, b) => b.created - a.created)[0]
-    : null;
+  const previewsHtml = previews.map(q => `<div class="questions-preview-item">${escapeHtml(q)}</div>`).join('');
+  const latestDrawing = state.drawings.length ? [...state.drawings].sort((a, b) => b.created - a.created)[0] : null;
 
   let drawingCardHtml;
   if (latestDrawing) {
@@ -682,6 +769,7 @@ function renderHome() {
     `;
   }
 
+  const unanswered = state.questions.filter(q => !q.answers[state.user]).length;
   grid.innerHTML = `
     <div class="feature-card full" data-goto="memories">
       <div class="feature-icon">⏳</div>
@@ -690,20 +778,17 @@ function renderHome() {
         <div class="feature-sub">${elapsed.days} days · ${elapsed.hours}h together</div>
       </div>
     </div>
-
     <div class="feature-card questions-preview" data-goto="questions">
       <div class="questions-preview-header">
         <div>
           <div class="feature-title">questions</div>
-          <div class="feature-sub">${state.questions.filter(q => !q.answers[state.user]).length || 'ask each other'}${state.questions.filter(q => !q.answers[state.user]).length ? ' to answer' : ''}</div>
+          <div class="feature-sub">${unanswered || 'ask each other'}${unanswered ? ' to answer' : ''}</div>
         </div>
         <div class="feature-icon">✦</div>
       </div>
       <div class="questions-preview-list">${previewsHtml}</div>
     </div>
-
     ${drawingCardHtml}
-
     <div class="feature-card" data-goto="settings">
       <div class="feature-icon">✿</div>
       <div>
@@ -719,7 +804,6 @@ function renderHome() {
       </div>
     </div>
   `;
-  // Wire goto handlers
   grid.querySelectorAll('[data-goto]').forEach(el => {
     el.onclick = () => showScreen(el.dataset.goto);
   });
@@ -731,9 +815,7 @@ function showAboutMore() {
     <div class="modal-handle"></div>
     <h2>more coming soon</h2>
     <p style="text-align: left; line-height: 1.6;">
-      Planned for future versions: hugging mode with live touch sync, a private chat with disappearing photos, a 3D globe showing the distance between us, a translator, an AI question helper, and notifications.
-      <br><br>
-      For now: enjoy the timeline, questions, and drawings. ✨
+      Now: chat under each answered question. Coming next: stories like Instagram with drawing on photos, plus a 3D globe and translator. 🌸
     </p>
     <button class="btn btn-primary" id="aboutOk">got it</button>
   `);
@@ -755,13 +837,8 @@ function updateCheckinButton() {
   const last = lsGet(`checkin:${state.user}`);
   const btn = document.getElementById('checkinBtn');
   if (!btn) return;
-  if (last === today) {
-    btn.disabled = true;
-    btn.textContent = '✓ today';
-  } else {
-    btn.disabled = false;
-    btn.textContent = '+300 daily';
-  }
+  if (last === today) { btn.disabled = true; btn.textContent = '✓ today'; }
+  else { btn.disabled = false; btn.textContent = '+300 daily'; }
 }
 
 async function addCoins(amount) {
@@ -904,7 +981,7 @@ function deleteEvent(id) {
   });
 }
 
-// ----- QUESTIONS -----
+// ----- QUESTIONS LIST -----
 function renderQuestions() {
   const list = document.getElementById('questionsList');
   const me = state.user;
@@ -914,12 +991,10 @@ function renderQuestions() {
   else if (state.filter === 'theirs') filtered = filtered.filter(q => q.answers[me] && !q.answers[other]);
   else if (state.filter === 'done') filtered = filtered.filter(q => q.answers.ivo && q.answers.nikolina);
   filtered.sort((a, b) => b.created - a.created);
-
   if (filtered.length === 0) {
     list.innerHTML = `<div class="empty"><div class="empty-icon">✦</div><div class="empty-text">${state.questions.length === 0 ? 'no questions yet · ask the first' : 'nothing here'}</div></div>`;
     return;
   }
-
   list.innerHTML = filtered.map(q => {
     const askerName = state.profile[q.asker]?.name || (q.asker === 'ivo' ? 'Ivo' : 'Nikolina');
     const meAnswered = !!q.answers[me];
@@ -928,7 +1003,7 @@ function renderQuestions() {
     return `
       <div class="question-card" data-q="${q.id}">
         <div class="question-meta">
-          <span class="asker-dot ${q.asker === 'ivo' ? 'ivo' : 'niki'}"></span>
+          ${avatarHtml(q.asker, 'tiny')}
           <span>${escapeHtml(askerName)} asked · ${dateStr}</span>
         </div>
         <div class="question-text">${escapeHtml(q.text)}</div>
@@ -1004,7 +1079,26 @@ async function submitQuestion() {
   toast('+500 coins · question sent');
 }
 
-function openQuestion(id) {
+// ----- QUESTION DETAIL with CHAT -----
+async function openQuestion(id) {
+  state.currentQuestionId = id;
+  const q = state.questions.find(x => x.id === id);
+  if (!q) return;
+  showScreen('questionDetail');
+  renderQuestionDetail();
+  // Load chat if both answered
+  const me = state.user;
+  const other = me === 'ivo' ? 'nikolina' : 'ivo';
+  if (q.answers[me] && q.answers[other]) {
+    await loadMessages(id);
+    renderQuestionDetail();
+    startChatSubscription(id);
+    scrollChatToBottom();
+  }
+}
+
+function renderQuestionDetail() {
+  const id = state.currentQuestionId;
   const q = state.questions.find(x => x.id === id);
   if (!q) return;
   const me = state.user;
@@ -1017,22 +1111,25 @@ function openQuestion(id) {
   let content = `
     <div class="question-card" style="margin-bottom: 24px;">
       <div class="question-meta">
-        <span class="asker-dot ${q.asker === 'ivo' ? 'ivo' : 'niki'}"></span>
+        ${avatarHtml(q.asker, 'tiny')}
         <span>${escapeHtml(state.profile[q.asker]?.name || q.asker)} asked</span>
       </div>
       <div class="question-text">${escapeHtml(q.text)}</div>
     </div>
   `;
+
   if (meAnswered) {
     content += `<div class="answer-block">
-      <div class="answer-author"><span class="asker-dot ${me === 'ivo' ? 'ivo' : 'niki'}"></span>${escapeHtml(meName)} · you</div>
+      <div class="answer-author">${avatarHtml(me, 'tiny')}<span>${escapeHtml(meName)} · you</span></div>
       <div class="answer-text">${escapeHtml(q.answers[me])}</div>
     </div>`;
     if (otherAnswered) {
       content += `<div class="answer-block">
-        <div class="answer-author"><span class="asker-dot ${other === 'ivo' ? 'ivo' : 'niki'}"></span>${escapeHtml(otherName)}</div>
+        <div class="answer-author">${avatarHtml(other, 'tiny')}<span>${escapeHtml(otherName)}</span></div>
         <div class="answer-text">${escapeHtml(q.answers[other])}</div>
       </div>`;
+      // Chat section
+      content += renderChatSection(id);
     } else {
       content += `<div class="locked-block">waiting for ${escapeHtml(otherName)} to answer...</div>`;
     }
@@ -1042,10 +1139,239 @@ function openQuestion(id) {
       <button class="btn btn-primary" id="answerSubmit">send answer</button>`;
   }
 
-  showScreen('questionDetail');
   document.getElementById('questionDetailContent').innerHTML = content;
   const submit = document.getElementById('answerSubmit');
   if (submit) submit.onclick = () => submitAnswer(q.id);
+
+  wireChatHandlers(id);
+}
+
+function renderChatSection(qid) {
+  const msgs = state.messagesByQuestion[qid] || [];
+  const me = state.user;
+  const msgsHtml = msgs.map(m => renderMessage(m, me === m.author)).join('') ||
+    `<div class="empty" style="padding: 20px;"><div class="empty-text">say something to each other 💌</div></div>`;
+  return `
+    <div class="chat-divider">our conversation</div>
+    <div class="chat-list" id="chatList">${msgsHtml}</div>
+    <div class="chat-composer">
+      <input type="file" id="chatFile" accept="image/*" style="display:none;">
+      <input type="file" id="chatCamera" accept="image/*" capture="environment" style="display:none;">
+      <button class="chat-attach-btn" id="chatGalleryBtn" title="photo">🖼</button>
+      <button class="chat-attach-btn" id="chatCameraBtn" title="camera">📷</button>
+      <textarea class="chat-input" id="chatInput" placeholder="message..." rows="1"></textarea>
+      <button class="chat-send-btn" id="chatSendBtn" disabled>↑</button>
+    </div>
+  `;
+}
+
+function renderMessage(m, isMine) {
+  const author = m.author;
+  const authorName = state.profile[author]?.name || (author === 'ivo' ? 'Ivo' : 'Nikolina');
+  const time = new Date(m.created_at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+  const dateStr = new Date(m.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+  const heart = m.liked_by_other ? `<span class="heart-mark">❤</span>` : '';
+  const body = m.kind === 'image'
+    ? `<div class="chat-bubble image-bubble" data-msg="${m.id}"><img src="${m.body}" alt="">${heart}</div>`
+    : `<div class="chat-bubble" data-msg="${m.id}">${escapeHtml(m.body)}${heart}</div>`;
+  return `
+    <div class="chat-msg ${isMine ? 'mine' : ''}">
+      ${avatarHtml(author, 'tiny')}
+      <div class="chat-msg-col">
+        ${body}
+        <div class="chat-msg-meta">
+          <span>${escapeHtml(authorName)}</span><span>·</span><span>${time} · ${dateStr}</span>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function wireChatHandlers(qid) {
+  const input = document.getElementById('chatInput');
+  const sendBtn = document.getElementById('chatSendBtn');
+  if (!input) return;
+
+  input.addEventListener('input', () => {
+    sendBtn.disabled = input.value.trim().length === 0;
+    // auto-grow
+    input.style.height = 'auto';
+    input.style.height = Math.min(input.scrollHeight, 120) + 'px';
+  });
+  sendBtn.onclick = () => sendTextMessage(qid);
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.shiftKey && !isTouchDevice()) {
+      e.preventDefault();
+      sendTextMessage(qid);
+    }
+  });
+
+  const gallery = document.getElementById('chatGalleryBtn');
+  const camera = document.getElementById('chatCameraBtn');
+  const fileInp = document.getElementById('chatFile');
+  const camInp = document.getElementById('chatCamera');
+  gallery.onclick = () => fileInp.click();
+  camera.onclick = () => camInp.click();
+  fileInp.onchange = (e) => handleChatImage(e, qid);
+  camInp.onchange = (e) => handleChatImage(e, qid);
+
+  // Double-tap on bubbles -> like
+  document.querySelectorAll('#chatList [data-msg]').forEach(el => {
+    attachDoubleTap(el, () => toggleLike(el.dataset.msg));
+  });
+}
+
+function isTouchDevice() {
+  return ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
+}
+
+function attachDoubleTap(el, handler) {
+  let last = 0;
+  const fire = (e) => {
+    const now = Date.now();
+    if (now - last < 350) {
+      e.preventDefault();
+      handler();
+      last = 0;
+    } else {
+      last = now;
+    }
+  };
+  el.addEventListener('click', fire);
+  el.addEventListener('dblclick', (e) => { e.preventDefault(); handler(); });
+}
+
+async function sendTextMessage(qid) {
+  const input = document.getElementById('chatInput');
+  const text = input.value.trim();
+  if (!text) return;
+  input.value = '';
+  input.style.height = 'auto';
+  document.getElementById('chatSendBtn').disabled = true;
+  await insertMessage(qid, { kind: 'text', body: text });
+}
+
+async function handleChatImage(e, qid) {
+  const f = e.target.files[0];
+  e.target.value = '';
+  if (!f) return;
+  const list = document.getElementById('chatList');
+  const tmpId = 'tmp_' + Date.now();
+  if (list) {
+    list.insertAdjacentHTML('beforeend', `<div class="chat-uploading" id="${tmpId}">uploading photo…</div>`);
+    scrollChatToBottom();
+  }
+  try {
+    const dataUrl = await resizeImageToDataUrl(f, 1600, 0.8);
+    const url = await uploadImage(dataUrl, 'chat');
+    if (!url) throw new Error('upload failed');
+    await insertMessage(qid, { kind: 'image', body: url });
+  } catch (err) {
+    console.error(err);
+    toast('could not send photo');
+  } finally {
+    const tmp = document.getElementById(tmpId);
+    if (tmp) tmp.remove();
+  }
+}
+
+async function insertMessage(qid, { kind, body }) {
+  if (!supabase) return;
+  const { data, error } = await supabase.from('messages').insert({
+    question_id: qid,
+    author: state.user,
+    kind,
+    body,
+  }).select().single();
+  if (error) {
+    console.error(error);
+    toast('could not send message');
+    return;
+  }
+  // Optimistic: also append locally (realtime will reconcile)
+  if (!state.messagesByQuestion[qid]) state.messagesByQuestion[qid] = [];
+  if (!state.messagesByQuestion[qid].some(m => m.id === data.id)) {
+    state.messagesByQuestion[qid].push(data);
+    renderQuestionDetail();
+    scrollChatToBottom();
+  }
+}
+
+async function toggleLike(msgId) {
+  if (!supabase) return;
+  const qid = state.currentQuestionId;
+  const msg = (state.messagesByQuestion[qid] || []).find(m => String(m.id) === String(msgId));
+  if (!msg) return;
+  // Only the OTHER person can like a message
+  if (msg.author === state.user) {
+    toast('you can like their messages 💕');
+    return;
+  }
+  const newVal = !msg.liked_by_other;
+  msg.liked_by_other = newVal;
+  renderQuestionDetail();
+  const { error } = await supabase.from('messages').update({ liked_by_other: newVal }).eq('id', msg.id);
+  if (error) {
+    console.error(error);
+    msg.liked_by_other = !newVal; // revert
+    renderQuestionDetail();
+  }
+}
+
+async function loadMessages(qid) {
+  if (!supabase) return;
+  const { data, error } = await supabase
+    .from('messages')
+    .select('*')
+    .eq('question_id', qid)
+    .order('created_at', { ascending: true });
+  if (error) {
+    console.error(error);
+    return;
+  }
+  state.messagesByQuestion[qid] = data || [];
+}
+
+let chatChannel = null;
+function startChatSubscription(qid) {
+  stopChatSubscription();
+  if (!supabase) return;
+  chatChannel = supabase.channel(`chat-${qid}`)
+    .on('postgres_changes',
+      { event: '*', schema: 'public', table: 'messages', filter: `question_id=eq.${qid}` },
+      (payload) => {
+        const arr = state.messagesByQuestion[qid] = state.messagesByQuestion[qid] || [];
+        if (payload.eventType === 'INSERT') {
+          if (!arr.some(m => m.id === payload.new.id)) {
+            arr.push(payload.new);
+            renderQuestionDetail();
+            scrollChatToBottom();
+          }
+        } else if (payload.eventType === 'UPDATE') {
+          const i = arr.findIndex(m => m.id === payload.new.id);
+          if (i !== -1) { arr[i] = payload.new; renderQuestionDetail(); }
+        } else if (payload.eventType === 'DELETE') {
+          state.messagesByQuestion[qid] = arr.filter(m => m.id !== payload.old.id);
+          renderQuestionDetail();
+        }
+      })
+    .subscribe();
+}
+
+function stopChatSubscription() {
+  if (chatChannel && supabase) {
+    supabase.removeChannel(chatChannel);
+    chatChannel = null;
+  }
+}
+
+function scrollChatToBottom() {
+  setTimeout(() => {
+    const list = document.getElementById('chatList');
+    if (list) list.scrollTop = list.scrollHeight;
+    // Also scroll the page so composer is in view
+    window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
+  }, 50);
 }
 
 async function submitAnswer(id) {
@@ -1057,6 +1383,7 @@ async function submitAnswer(id) {
   await dbSet('questions:list', JSON.stringify(state.questions));
   await addCoins(500);
   toast('+500 coins · answer sent');
+  // re-open to refresh
   openQuestion(id);
 }
 
@@ -1079,7 +1406,6 @@ function initDrawing() {
   ctx.fillRect(0, 0, rect.width, rect.height);
   state.drawHistory = [];
   saveDrawState();
-
   let drawing = false;
   let last = null;
   const getPos = (e) => {
@@ -1150,8 +1476,11 @@ function setColor(el, c) {
 }
 
 async function saveDrawing() {
-  const dataUrl = state.drawCanvas.toDataURL('image/jpeg', 0.6);
-  state.drawings.push({ id: 'd_' + Date.now(), author: state.user, dataurl: dataUrl, created: Date.now() });
+  const dataUrl = state.drawCanvas.toDataURL('image/jpeg', 0.7);
+  // Upload to storage; fallback to dataurl on failure (keeps v1 behavior)
+  const url = await uploadImage(dataUrl, 'drawings');
+  const stored = url || dataUrl;
+  state.drawings.push({ id: 'd_' + Date.now(), author: state.user, dataurl: stored, created: Date.now() });
   if (state.drawings.length > 20) state.drawings = state.drawings.slice(-20);
   await dbSet('drawings:list', JSON.stringify(state.drawings));
   await addCoins(150);
@@ -1214,17 +1543,21 @@ async function saveName() {
   toast('name updated');
 }
 
-function handleSettingsAvatar(e) {
+async function handleSettingsAvatar(e) {
   const f = e.target.files[0];
   if (!f) return;
-  const reader = new FileReader();
-  reader.onload = async () => {
-    state.profile[state.user] = { ...(state.profile[state.user] || {}), avatar: reader.result };
+  try {
+    const resized = await resizeImageToDataUrl(f, 600, 0.85);
+    const url = await uploadImage(resized, 'avatars');
+    const stored = url || resized;
+    state.profile[state.user] = { ...(state.profile[state.user] || {}), avatar: stored };
     await dbSet(`profile:${state.user}`, JSON.stringify(state.profile[state.user]));
     renderSettings();
     toast('photo updated');
-  };
-  reader.readAsDataURL(f);
+  } catch (err) {
+    console.error(err);
+    toast('could not update photo');
+  }
 }
 
 // ----- MODAL / TOAST -----
@@ -1261,14 +1594,11 @@ function toast(msg) {
   toastTimeout = setTimeout(() => t.classList.remove('show'), 2400);
 }
 
-// ----- REALTIME -----
+// ----- REALTIME for kv -----
 function setupRealtime() {
   if (!supabase) return;
   supabase.channel('kv-changes')
-    .on('postgres_changes', { event: '*', schema: 'public', table: 'kv' }, (payload) => {
-      // A row changed somewhere — reload everything (cheap and correct for this size)
-      reloadFromDb();
-    })
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'kv' }, () => reloadFromDb())
     .subscribe();
 }
 
@@ -1280,6 +1610,7 @@ async function reloadFromDb() {
   if (active.id === 'screen-home') renderHome();
   if (active.id === 'screen-memories') renderMemories();
   if (active.id === 'screen-questions') renderQuestions();
+  if (active.id === 'screen-questionDetail') renderQuestionDetail();
   if (active.id === 'screen-drawing') renderGallery();
   if (active.id === 'screen-settings') renderSettings();
 }
@@ -1335,12 +1666,10 @@ function wireEvents() {
 // BOOT
 // ===============================================================
 export function boot() {
-  // Inject CSS
   const style = document.createElement('style');
   style.textContent = CSS;
   document.head.appendChild(style);
 
-  // Inject HTML
   const root = document.getElementById('ivolina-root') || document.body;
 
   if (!supabase) {
@@ -1357,13 +1686,11 @@ export function boot() {
   root.innerHTML = HTML;
   wireEvents();
 
-  // Prevent pinch zoom
   document.addEventListener('gesturestart', e => e.preventDefault());
   document.addEventListener('touchmove', e => {
     if (e.scale && e.scale !== 1) e.preventDefault();
   }, { passive: false });
 
-  // Init flow
   (async () => {
     await loadAllState();
     setupRealtime();
