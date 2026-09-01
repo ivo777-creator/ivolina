@@ -1,5 +1,5 @@
 // ===============================================================
-// IVOLINA v2.1 — real tables for questions/answers/drawings (no more overwrites)
+// IVOLINA v2.2 — question categories + 24h stories
 // ===============================================================
 import { createClient } from '@supabase/supabase-js';
 
@@ -15,93 +15,190 @@ if (SUPABASE_URL && SUPABASE_KEY) {
 
 const RELATIONSHIP_START = new Date('2026-05-08T00:00:00');
 
-const PRESET_QUESTIONS = [
-  "What was the exact moment you knew?",
-  "If we had one whole day with no phones, no plans — what would we do?",
-  "What's a small thing I do that you secretly love?",
-  "What scares you most about us, honestly?",
-  "Where do you see us living in five years?",
-  "What's something you've never told anyone but want me to know?",
-  "What was the last thing that made you cry?",
-  "If I could read your mind right now, what would I find?",
-  "What's a memory of us you replay the most?",
-  "What does 'home' mean to you?",
-  "Describe the first time you felt loved by me.",
-  "What's the most romantic thing we've never done that you'd like to?",
-  "Which of our songs would you put on first if I walked through the door right now?",
-  "What's something you want to learn together?",
-  "When do you feel closest to me, even when we're apart?",
-  "What do you miss most about me on bad days?",
-  "What's your favorite version of me?",
-  "If we could relive one day, which one?",
-  "What's something I've said that you still think about?",
-  "What's something you want me to ask you that I never have?",
-  "What does forever mean to you?",
-  "What would your perfect Sunday with me look like?",
-  "What's the hardest thing about loving me?",
-  "What's the easiest thing about loving me?",
-  "What's a tradition you'd love for us to start?",
-  "When did you first feel safe with me?",
-  "What part of me did you fall for first?",
-  "If we had a tiny apartment together right now, what would it smell like?",
-  "What's a question you've been afraid to ask me?",
-  "What do you hope our future kids inherit from me?",
-  "What's something about us that you're proud of?",
-  "What's a small fear you have about us closing the distance?",
-  "What's your love language — really?",
-  "How can I love you better this week?",
-  "What's a moment with me you wish lasted longer?",
-  "Where would you want our first home to be?",
-  "What's the best gift I've ever given you, even if it wasn't a thing?",
-  "What's something you forgive me for that I didn't know needed forgiving?",
-  "What does trust look like for you?",
-  "What's the loneliest part of long distance?",
-  "What's the best part of long distance?",
-  "When was the last time you felt truly understood by me?",
-  "What's a side of you I haven't met yet?",
-  "What's a side of me you want to see more of?",
-  "If you wrote a letter to us five years from now, what would it say?",
-  "What's something you want to be braver about together?",
-  "What does intimacy mean to you, beyond the physical?",
-  "What's a hope you have for us that you've never said out loud?",
-  "Describe a perfect evening with me in three sentences.",
-  "What's your favorite thing about how I love you?",
-  "What's a habit of mine you secretly find charming?",
-  "What's the kindest thing I've ever done for you?",
-  "What's a part of our story you want to make sure we remember?",
-  "What's something you want us to never stop doing?",
-  "When have you felt most chosen by me?",
-  "What does faithfulness mean to you, beyond not cheating?",
-  "What's the most honest thing you can say to me right now?",
-  "What's a fear about your past you'd like me to know?",
-  "What's a dream you have that I'm part of?",
-  "What's a dream you have that's just for you?",
-  "If our love had a color, what would it be and why?",
-  "What's something I do that calms you down?",
-  "What's something you wish I'd ask you more often?",
-  "What does our first year together feel like to you so far?",
-  "What's something you want to celebrate that we forgot to?",
-  "What's a story about us you'd tell our grandchildren?",
-  "What's a moment when you almost gave up but didn't?",
-  "What's a song that reminds you of me?",
-  "What's the most surprising thing you've learned about me?",
-  "What's the most surprising thing you've learned about yourself through me?",
-  "What's a way I've changed you that you're grateful for?",
-  "What does choosing each other mean, on the days it's hard?",
-  "What's something silly we should do next time we're together?",
-  "What's something tender we should do next time we're together?",
-  "What's a quiet moment with me you'd freeze in time?",
-  "What's the bravest thing we've done together?",
-  "If we wrote our vows today, what would yours start with?",
-  "What's a way you want to grow in our next year?",
-  "What's a way you've seen me grow?",
-  "What's the most beautiful thing you've ever caught me doing?",
-  "What's something I should know about your faith / what you believe?",
-  "What does 'we' mean to you now, compared to when we started?",
-  "If you could tell past-me one thing, what would it be?",
-  "What's a feeling about us you don't have words for yet?",
-  "What's a small ritual you'd like to share across the distance?"
+const QUESTION_CATEGORIES = [
+  { id: 'all',        label: 'all',        emoji: '\u2726' },
+  { id: 'relationship', label: 'us',       emoji: '\ud83e\udec2' },
+  { id: 'future',     label: 'future',     emoji: '\ud83d\udd2e' },
+  { id: 'love',       label: 'love',       emoji: '\ud83c\udf39' },
+  { id: 'intimacy',   label: 'intimacy',   emoji: '\ud83d\udd25' },
+  { id: 'trust',      label: 'trust',      emoji: '\ud83e\udd1d' },
+  { id: 'distance',   label: 'distance',   emoji: '\u2708\ufe0f' },
+  { id: 'playful',    label: 'playful',    emoji: '\ud83c\udfa0' },
+  { id: 'deep',       label: 'deep',       emoji: '\ud83c\udf0a' },
 ];
+
+const PRESET_BY_CATEGORY = {
+  relationship: [
+    "What was the exact moment you knew?",
+    "What part of me did you fall for first?",
+    "What's a small thing I do that you secretly love?",
+    "What's your favorite version of me?",
+    "What's the hardest thing about loving me?",
+    "What's the easiest thing about loving me?",
+    "What's something about us that you're proud of?",
+    "When have you felt most chosen by me?",
+    "What does 'we' mean to you now, compared to when we started?",
+    "What's a part of our story you want to make sure we remember?",
+    "What's a way I've changed you that you're grateful for?",
+    "What's a way you've seen me grow?",
+    "What's the most surprising thing you've learned about me?",
+    "What's the most surprising thing you've learned about yourself through me?",
+    "What's a story about us you'd tell our grandchildren?",
+    "What do we do better than most couples?",
+    "What's something we should be more patient with each other about?",
+    "If our relationship had a soundtrack, what's the opening song?",
+    "What's a moment you realised we were really a team?",
+    "What's something you've never thanked me for?",
+  ],
+  future: [
+    "Where do you see us living in five years?",
+    "Where would you want our first home to be?",
+    "What's something you want to learn together?",
+    "What's a tradition you'd love for us to start?",
+    "If we had a tiny apartment together right now, what would it smell like?",
+    "What do you hope our future kids inherit from me?",
+    "If you wrote a letter to us five years from now, what would it say?",
+    "What's a dream you have that I'm part of?",
+    "What's a dream you have that's just for you?",
+    "If we wrote our vows today, what would yours start with?",
+    "What's a way you want to grow in our next year?",
+    "What does forever mean to you?",
+    "What's the first thing we should buy for our home together?",
+    "What's a country you want us to see together, and why that one?",
+    "What kind of mornings do you want us to have one day?",
+    "What's something you want us to have achieved in ten years?",
+    "How do you picture an ordinary Tuesday with me, years from now?",
+    "What's a fear you have about the future that I could help carry?",
+    "What would you want our home to always have in it?",
+    "What's one promise you'd make me for the next five years?",
+  ],
+  love: [
+    "Describe the first time you felt loved by me.",
+    "What's the most romantic thing we've never done that you'd like to?",
+    "What's your love language \u2014 really?",
+    "How can I love you better this week?",
+    "What's your favorite thing about how I love you?",
+    "What's the kindest thing I've ever done for you?",
+    "If our love had a color, what would it be and why?",
+    "What would your perfect Sunday with me look like?",
+    "Describe a perfect evening with me in three sentences.",
+    "What's the best gift I've ever given you, even if it wasn't a thing?",
+    "What's a habit of mine you secretly find charming?",
+    "What's something I do that calms you down?",
+    "Which of our songs would you put on first if I walked through the door right now?",
+    "What's a song that reminds you of me?",
+    "What's the most beautiful thing you've ever caught me doing?",
+    "What's something small I could do that would make your whole day?",
+    "When do you feel the most loved by me?",
+    "What's a compliment you wish I gave you more often?",
+    "What would you write on a note left in my pocket?",
+    "What's love supposed to feel like on a boring day?",
+  ],
+  intimacy: [
+    "What does intimacy mean to you, beyond the physical?",
+    "What's something silly we should do next time we're together?",
+    "What's something tender we should do next time we're together?",
+    "What's a quiet moment with me you'd freeze in time?",
+    "What's a moment with me you wish lasted longer?",
+    "When do you feel closest to me, even when we're apart?",
+    "What's a side of you I haven't met yet?",
+    "What's a side of me you want to see more of?",
+    "What makes you feel wanted?",
+    "What's something you'd like us to be more open about?",
+    "What's a touch you miss the most?",
+    "What's the first thing you want to do when we see each other again?",
+    "What helps you feel safe enough to be completely yourself with me?",
+    "What's something you find attractive about me that isn't physical?",
+    "What's a way we could feel closer this week, even from far away?",
+    "What do you think about right before you fall asleep?",
+    "What's something you'd never say out loud but would write down?",
+    "What does being wanted look like to you?",
+  ],
+  trust: [
+    "What does trust look like for you?",
+    "What does faithfulness mean to you, beyond not cheating?",
+    "What's the most honest thing you can say to me right now?",
+    "What's a question you've been afraid to ask me?",
+    "What's something you've never told anyone but want me to know?",
+    "What's a fear about your past you'd like me to know?",
+    "What's something you forgive me for that I didn't know needed forgiving?",
+    "When did you first feel safe with me?",
+    "What's something I should know about your faith / what you believe?",
+    "What does choosing each other mean, on the days it's hard?",
+    "What's something you want me to ask you that I never have?",
+    "What's something I've said that you still think about?",
+    "What helps you tell me a hard truth?",
+    "When was the last time you felt truly understood by me?",
+    "What would make it easier to bring me a problem?",
+    "What's a boundary of yours I should understand better?",
+    "What's a way I could be more reliable for you?",
+    "What's something you need to hear from me more often?",
+  ],
+  distance: [
+    "What's the loneliest part of long distance?",
+    "What's the best part of long distance?",
+    "What do you miss most about me on bad days?",
+    "What's a small fear you have about us closing the distance?",
+    "What's a small ritual you'd like to share across the distance?",
+    "If we had one whole day with no phones, no plans \u2014 what would we do?",
+    "What's the hardest hour of the day when we're apart?",
+    "What makes the distance feel smaller?",
+    "What's something I could send you that would help on a hard day?",
+    "What do you want our first hour together to look like next time?",
+    "What have you learned about yourself through the distance?",
+    "What's something about waiting that you didn't expect?",
+    "What's a photo of me you keep going back to?",
+    "How do you want us to handle the days we can't talk much?",
+    "What's the last thing you want to hear before we hang up?",
+    "What would make goodbyes at the airport easier?",
+  ],
+  playful: [
+    "If I could read your mind right now, what would I find?",
+    "What's the bravest thing we've done together?",
+    "If we could relive one day, which one?",
+    "What's a memory of us you replay the most?",
+    "What's something you want us to never stop doing?",
+    "What's something you want to celebrate that we forgot to?",
+    "If we swapped lives for a day, what would surprise you most?",
+    "What nickname for me have you never told me about?",
+    "What's the funniest thing that's ever happened between us?",
+    "If we had to win a competition together, what should it be?",
+    "What's a terrible idea we should absolutely try once?",
+    "What food would you want us to eat on our last day on earth?",
+    "If you had to describe me to a stranger in three words?",
+    "What's an argument we've had that's funny in hindsight?",
+    "What would our reality show be called?",
+    "If we adopted a pet tomorrow, what and what name?",
+  ],
+  deep: [
+    "What scares you most about us, honestly?",
+    "What does 'home' mean to you?",
+    "What was the last thing that made you cry?",
+    "What's a moment when you almost gave up but didn't?",
+    "What's a hope you have for us that you've never said out loud?",
+    "What's a feeling about us you don't have words for yet?",
+    "If you could tell past-me one thing, what would it be?",
+    "What's something you want to be braver about together?",
+    "What does our first year together feel like to you so far?",
+    "What's a way you want to be remembered?",
+    "What's something you're still carrying that you'd like to put down?",
+    "What do you need most right now that you haven't asked for?",
+    "What's changed in you in the last year?",
+    "What's a belief of yours that's shifted since we met?",
+    "What do you want your life to have been about?",
+    "What's something you're afraid I'd think differently of you for?",
+  ],
+};
+
+// Flat list, kept for the home-screen previews.
+const PRESET_QUESTIONS = Object.values(PRESET_BY_CATEGORY).flat();
+
+function categoryOf(text) {
+  for (const [cat, list] of Object.entries(PRESET_BY_CATEGORY)) {
+    if (list.includes(text)) return cat;
+  }
+  return null;
+}
 
 const MOCK_EVENTS = [
   { id: 'evt_anniv', emoji: '🌸', title: 'Our first anniversary', date: '2027-05-08', _system: true },
@@ -193,6 +290,10 @@ const state = {
   drawCanvas: null,
   drawCtx: null,
   questionPreviewCache: null,
+  presetCategory: 'all',
+  pendingCategory: null,
+  stories: [],
+  storyIndex: 0,
   // chat
   currentQuestionId: null,
   messagesByQuestion: {},   // questionId -> array
@@ -370,10 +471,19 @@ textarea.input { resize: none; min-height: 100px; line-height: 1.5; }
 .answer-author { font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 6px; display: flex; align-items: center; gap: 8px; }
 .answer-text { font-family: 'Fraunces', serif; font-size: 16px; line-height: 1.5; }
 .locked-block { text-align: center; padding: 24px; color: var(--text-muted); font-style: italic; font-family: 'Fraunces', serif; }
-.preset-list { max-height: 50vh; overflow-y: auto; -webkit-overflow-scrolling: touch; margin-bottom: 16px; border-radius: 16px; background: rgba(255,255,255,0.03); }
-.preset-item { padding: 14px 16px; border-bottom: 1px solid var(--glass-border); cursor: pointer; font-size: 14px; line-height: 1.4; }
+.preset-list { max-height: 46vh; overflow-y: auto; -webkit-overflow-scrolling: touch; margin-bottom: 16px; border-radius: 16px; background: rgba(255,255,255,0.03); }
+.preset-item { padding: 14px 16px; border-bottom: 1px solid var(--glass-border); cursor: pointer; font-size: 14px; line-height: 1.4; display: flex; align-items: flex-start; gap: 10px; }
 .preset-item:active { background: rgba(255,255,255,0.06); }
 .preset-item:last-child { border-bottom: none; }
+.preset-item.asked { opacity: 0.4; }
+.preset-item.asked .preset-text { text-decoration: line-through; text-decoration-color: var(--text-muted); }
+.preset-text { flex: 1; min-width: 0; }
+.preset-badge { font-size: 11px; color: #7ee0a5; flex-shrink: 0; margin-top: 1px; }
+.cat-chips { display: flex; gap: 8px; overflow-x: auto; -webkit-overflow-scrolling: touch; padding: 2px 0 12px; margin: 0 -4px; scrollbar-width: none; }
+.cat-chips::-webkit-scrollbar { display: none; }
+.cat-chip { background: rgba(255,255,255,0.05); border: 1px solid var(--glass-border); color: var(--text-dim); padding: 8px 14px; border-radius: 100px; font-size: 13px; font-weight: 500; cursor: pointer; white-space: nowrap; font-family: inherit; flex-shrink: 0; }
+.cat-chip.active { background: var(--accent); color: #0A0612; border-color: var(--accent); }
+.preset-count { text-align: center; font-size: 12px; color: var(--text-muted); margin-bottom: 12px; font-family: 'Fraunces', serif; font-style: italic; }
 
 .canvas-wrap { aspect-ratio: 1; background: #fff; border-radius: 20px; overflow: hidden; margin-bottom: 16px; touch-action: none; position: relative; }
 #drawCanvas { width: 100%; height: 100%; display: block; touch-action: none; }
@@ -403,6 +513,46 @@ textarea.input { resize: none; min-height: 100px; line-height: 1.5; }
 .config-error { padding: 40px 24px; text-align: center; color: var(--text-dim); font-family: 'Fraunces', serif; }
 .config-error h2 { font-size: 28px; margin-bottom: 16px; color: var(--text); }
 .config-error code { background: rgba(255,255,255,0.06); padding: 2px 8px; border-radius: 6px; font-family: monospace; font-size: 13px; }
+
+/* ===== STORIES ===== */
+@keyframes ringSpin { to { transform: rotate(360deg); } }
+@keyframes storyIn { from { opacity: 0; transform: scale(1.04); } to { opacity: 1; transform: scale(1); } }
+
+.story-row { display: flex; gap: 16px; align-items: flex-start; padding: 4px 4px 24px; overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
+.story-row::-webkit-scrollbar { display: none; }
+.story-bubble { display: flex; flex-direction: column; align-items: center; gap: 6px; flex-shrink: 0; width: 76px; cursor: pointer; }
+.story-ring { width: 68px; height: 68px; border-radius: 50%; padding: 3px; position: relative; display: flex; align-items: center; justify-content: center; }
+.story-ring.unseen { background: conic-gradient(from 0deg, #F4A8C8, #ffd56b, #7BC4F5, #F4A8C8); animation: ringSpin 6s linear infinite; }
+.story-ring.seen { background: rgba(255,255,255,0.14); }
+.story-ring.none { background: transparent; border: 2px dashed var(--glass-border); }
+.story-ring-inner { width: 100%; height: 100%; border-radius: 50%; background: var(--bg-0); padding: 2px; }
+.story-avatar { width: 100%; height: 100%; border-radius: 50%; overflow: hidden; background: linear-gradient(135deg, var(--avc, var(--accent)), var(--accent-soft)); display: flex; align-items: center; justify-content: center; font-family: 'Fraunces', serif; font-size: 22px; color: #fff; }
+.story-avatar img { width: 100%; height: 100%; object-fit: cover; }
+.story-avatar.ivo { --avc: var(--ivo); }
+.story-avatar.niki { --avc: var(--niki); }
+.story-plus { position: absolute; bottom: -2px; right: -2px; width: 24px; height: 24px; border-radius: 50%; background: linear-gradient(135deg, var(--accent), var(--accent-soft)); color: #0A0612; display: flex; align-items: center; justify-content: center; font-size: 16px; font-weight: 700; border: 3px solid var(--bg-0); line-height: 1; }
+.story-label { font-size: 11px; color: var(--text-dim); max-width: 76px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: center; }
+
+.story-viewer { position: fixed; inset: 0; background: #000; z-index: 300; display: none; flex-direction: column; }
+.story-viewer.active { display: flex; }
+.story-progress { display: flex; gap: 4px; padding: calc(env(safe-area-inset-top) + 10px) 12px 8px; }
+.story-progress-bar { flex: 1; height: 3px; background: rgba(255,255,255,0.25); border-radius: 2px; overflow: hidden; }
+.story-progress-fill { height: 100%; width: 0%; background: #fff; border-radius: 2px; }
+.story-progress-fill.done { width: 100%; }
+.story-viewer-head { display: flex; align-items: center; gap: 10px; padding: 4px 16px 10px; color: #fff; }
+.story-viewer-head .med-avatar { border: 1px solid rgba(255,255,255,0.3); }
+.story-viewer-name { font-family: 'Fraunces', serif; font-size: 16px; }
+.story-viewer-time { font-size: 12px; color: rgba(255,255,255,0.6); }
+.story-viewer-close { margin-left: auto; background: none; border: none; color: #fff; font-size: 28px; cursor: pointer; line-height: 1; padding: 4px 8px; }
+.story-stage { flex: 1; position: relative; display: flex; align-items: center; justify-content: center; overflow: hidden; }
+.story-stage img { max-width: 100%; max-height: 100%; object-fit: contain; animation: storyIn 0.35s cubic-bezier(0.16,1,0.3,1); }
+.story-nav { position: absolute; inset: 0; display: flex; }
+.story-nav div { flex: 1; }
+.story-caption { padding: 12px 20px calc(env(safe-area-inset-bottom) + 20px); color: #fff; font-family: 'Fraunces', serif; font-size: 15px; text-align: center; }
+.story-expiry { padding: 0 20px calc(env(safe-area-inset-bottom) + 14px); text-align: center; color: rgba(255,255,255,0.45); font-size: 11px; }
+.story-delete { background: none; border: none; color: rgba(255,255,255,0.55); font-size: 12px; cursor: pointer; font-family: inherit; text-decoration: underline; }
+
+.story-preview-img { width: 100%; max-height: 46vh; object-fit: contain; border-radius: 18px; background: #000; margin-bottom: 16px; display: block; }
 
 /* ===== CHAT ===== */
 .chat-divider { text-align: center; margin: 28px 0 16px; font-family: 'Fraunces', serif; font-style: italic; color: var(--text-muted); font-size: 13px; display: flex; align-items: center; gap: 10px; }
@@ -470,6 +620,9 @@ const HTML = `
         <div class="greeting-sub" id="homeSub">a little world, just for two</div>
       </div>
     </div>
+    <div class="story-row" id="storyRow"></div>
+    <input type="file" id="storyFile" accept="image/*" style="display:none;">
+    <input type="file" id="storyCamera" accept="image/*" capture="user" style="display:none;">
     <div class="coins-bar">
       <div class="coins-display">
         <div class="coin-icon">★</div>
@@ -583,12 +736,13 @@ const HTML = `
       <div class="settings-row" id="logoutRow"><span class="settings-label" style="color: #ff95a5;">logout</span><span class="settings-value">›</span></div>
     </div>
     <div style="text-align: center; margin-top: 32px; color: var(--text-muted); font-size: 12px; font-family: 'Fraunces', serif; font-style: italic;">
-      ivolina v2.1 · made with love
+      ivolina v2.2 · made with love
     </div>
   </div>
 </div>
 
 <div class="modal-backdrop" id="modalBackdrop"></div>
+<div class="story-viewer" id="storyViewer"></div>
 <div class="toast" id="toast"></div>
 `;
 
@@ -735,6 +889,7 @@ function renderHome() {
 
   document.getElementById('coinsCount').textContent = state.coins[state.user].toLocaleString();
   updateCheckinButton();
+  renderStoryRow();
 
   const grid = document.getElementById('featureGrid');
   const elapsed = elapsedFromStart();
@@ -818,7 +973,7 @@ function showAboutMore() {
     <div class="modal-handle"></div>
     <h2>more coming soon</h2>
     <p style="text-align: left; line-height: 1.6;">
-      Now: chat under each answered question. Coming next: stories like Instagram with drawing on photos, plus a 3D globe and translator. 🌸
+      Now: categories for questions, and stories that vanish after 24 hours. Coming next: push notifications and a proper drawing studio with brushes, stickers and backgrounds. 🌸
     </p>
     <button class="btn btn-primary" id="aboutOk">got it</button>
   `);
@@ -1038,20 +1193,53 @@ function openAskQuestion() {
     <button class="btn btn-primary" id="askSubmit">ask</button>
     <button class="btn btn-ghost" id="askCancel">cancel</button>
   `);
-  document.getElementById('askBrowse').onclick = showPresets;
+  state.pendingCategory = null;
+  document.getElementById('askBrowse').onclick = () => showPresets();
   document.getElementById('askSubmit').onclick = submitQuestion;
   document.getElementById('askCancel').onclick = closeModal;
 }
 
-function showPresets() {
-  const items = PRESET_QUESTIONS.map((q, i) => `<div class="preset-item" data-pre="${i}">${escapeHtml(q)}</div>`).join('');
+// Normalised set of every question text already asked, so we can grey them out.
+function askedTextSet() {
+  return new Set(state.questions.map(q => (q.text || '').trim().toLowerCase()));
+}
+
+function showPresets(category) {
+  const cat = category || state.presetCategory || 'all';
+  state.presetCategory = cat;
+
+  const asked = askedTextSet();
+  const list = cat === 'all' ? PRESET_QUESTIONS : (PRESET_BY_CATEGORY[cat] || []);
+
+  const chips = QUESTION_CATEGORIES.map(c =>
+    `<button class="cat-chip ${c.id === cat ? 'active' : ''}" data-cat="${c.id}">${c.emoji} ${escapeHtml(c.label)}</button>`
+  ).join('');
+
+  const askedCount = list.filter(q => asked.has(q.trim().toLowerCase())).length;
+
+  const items = list.map(q => {
+    const isAsked = asked.has(q.trim().toLowerCase());
+    // Index into the FLAT list, so picking works the same for every category.
+    const flatIndex = PRESET_QUESTIONS.indexOf(q);
+    return `<div class="preset-item ${isAsked ? 'asked' : ''}" data-pre="${flatIndex}">
+      <span class="preset-text">${escapeHtml(q)}</span>
+      ${isAsked ? '<span class="preset-badge">✓ asked</span>' : ''}
+    </div>`;
+  }).join('');
+
   showModal(`
     <div class="modal-handle"></div>
     <h2>choose a prompt</h2>
+    <div class="cat-chips">${chips}</div>
+    <div class="preset-count">${list.length} questions · ${askedCount} already asked</div>
     <div class="preset-list">${items}</div>
     <button class="btn btn-ghost" id="presetBack">back</button>
   `);
+
   document.getElementById('presetBack').onclick = openAskQuestion;
+  document.querySelectorAll('[data-cat]').forEach(c => {
+    c.onclick = () => showPresets(c.dataset.cat);
+  });
   document.querySelectorAll('[data-pre]').forEach(e => {
     e.onclick = () => pickPreset(parseInt(e.dataset.pre));
   });
@@ -1059,16 +1247,19 @@ function showPresets() {
 
 function pickPreset(i) {
   const q = PRESET_QUESTIONS[i];
+  const alreadyAsked = askedTextSet().has(q.trim().toLowerCase());
   showModal(`
     <div class="modal-handle"></div>
     <h2>ask a question</h2>
-    <p>edit if you'd like</p>
+    <p>${alreadyAsked ? 'asked before — still fine to ask again' : 'edit it if you like'}</p>
     <textarea id="askInput" class="input">${escapeHtml(q)}</textarea>
     <button class="btn btn-primary" id="askSubmit">ask</button>
     <button class="btn btn-ghost" id="askBack">back to prompts</button>
   `);
+  // Remember which category this came from, so it gets stored with the question.
+  state.pendingCategory = categoryOf(q);
   document.getElementById('askSubmit').onclick = submitQuestion;
-  document.getElementById('askBack').onclick = showPresets;
+  document.getElementById('askBack').onclick = () => showPresets();
 }
 
 async function submitQuestion() {
@@ -1079,7 +1270,7 @@ async function submitQuestion() {
   const id = 'q_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6);
   const { data, error } = await supabase
     .from('questions')
-    .insert({ id, text, asker: state.user })
+    .insert({ id, text, asker: state.user, category: state.pendingCategory || null })
     .select()
     .single();
 
@@ -1101,6 +1292,7 @@ async function submitQuestion() {
     });
   }
 
+  state.pendingCategory = null;
   await addCoins(500);
   closeModal();
   renderQuestions();
@@ -1589,6 +1781,314 @@ function renderGallery() {
   }).join('');
 }
 
+
+// ===============================================================
+// STORIES
+// ===============================================================
+
+// Ask the database to delete anything older than 24 hours, then load
+// whatever is still alive.
+async function loadStories() {
+  if (!supabase) return;
+  try {
+    await supabase.rpc('purge_expired_stories');
+  } catch (e) {
+    // Not fatal — we filter client-side too.
+    console.warn('purge_expired_stories unavailable', e);
+  }
+  const { data, error } = await supabase
+    .from('stories')
+    .select('*')
+    .gt('expires_at', new Date().toISOString())
+    .order('created_at', { ascending: true });
+  if (error) { console.error('loadStories', error); return; }
+  state.stories = data || [];
+}
+
+function seenStoryIds() {
+  try {
+    return new Set(JSON.parse(lsGet('seenStories') || '[]'));
+  } catch { return new Set(); }
+}
+
+function markStorySeen(id) {
+  const seen = seenStoryIds();
+  seen.add(id);
+  // Keep the list from growing forever.
+  const arr = [...seen].slice(-200);
+  lsSet('seenStories', JSON.stringify(arr));
+}
+
+function storiesOf(who) {
+  return state.stories.filter(s => s.author === who);
+}
+
+function hasUnseenStories(who) {
+  const seen = seenStoryIds();
+  return storiesOf(who).some(s => !seen.has(s.id));
+}
+
+function renderStoryRow() {
+  const row = document.getElementById('storyRow');
+  if (!row) return;
+  const me = state.user;
+  const other = me === 'ivo' ? 'nikolina' : 'ivo';
+
+  const bubble = (who, isMe) => {
+    const profile = state.profile[who];
+    const name = isMe ? 'your story' : (profile?.name || (who === 'ivo' ? 'Ivo' : 'Nikolina'));
+    const count = storiesOf(who).length;
+    const cls = who === 'ivo' ? 'ivo' : 'niki';
+    let ringClass = 'none';
+    if (count > 0) ringClass = hasUnseenStories(who) ? 'unseen' : 'seen';
+    const inner = profile?.avatar
+      ? `<img src="${profile.avatar}" alt="">`
+      : (who === 'ivo' ? 'I' : 'N');
+    return `
+      <div class="story-bubble" data-story-user="${who}">
+        <div class="story-ring ${ringClass}">
+          <div class="story-ring-inner">
+            <div class="story-avatar ${cls}">${inner}</div>
+          </div>
+          ${isMe ? '<div class="story-plus" data-add-story="1">+</div>' : ''}
+        </div>
+        <div class="story-label">${escapeHtml(name)}</div>
+      </div>
+    `;
+  };
+
+  row.innerHTML = bubble(me, true) + bubble(other, false);
+
+  row.querySelectorAll('[data-story-user]').forEach(el => {
+    el.onclick = (e) => {
+      if (e.target.closest('[data-add-story]')) {
+        openStoryPicker();
+        return;
+      }
+      const who = el.dataset.storyUser;
+      if (storiesOf(who).length === 0) {
+        if (who === state.user) openStoryPicker();
+        else toast('no story right now');
+        return;
+      }
+      openStoryViewer(who);
+    };
+  });
+}
+
+// ----- posting a story -----
+function openStoryPicker() {
+  const inp = document.getElementById('storyFile');
+  const cam = document.getElementById('storyCamera');
+  showModal(`
+    <div class="modal-handle"></div>
+    <h2>add to your story</h2>
+    <p>it disappears after 24 hours</p>
+    <button class="btn btn-primary" id="storyFromGallery">choose from gallery</button>
+    <button class="btn btn-ghost" id="storyFromCamera">take a photo</button>
+    <button class="btn btn-ghost" id="storyCancel">cancel</button>
+  `);
+  document.getElementById('storyFromGallery').onclick = () => inp.click();
+  document.getElementById('storyFromCamera').onclick = () => cam.click();
+  document.getElementById('storyCancel').onclick = closeModal;
+}
+
+async function handleStoryFile(e) {
+  const f = e.target.files[0];
+  e.target.value = '';
+  if (!f) return;
+  closeModal();
+  try {
+    // 1440px on the long edge keeps the original aspect ratio and stays sharp.
+    const dataUrl = await resizeImageToDataUrl(f, 1440, 0.85);
+    const dims = await imageDimensions(dataUrl);
+    showStoryConfirm(dataUrl, dims);
+  } catch (err) {
+    console.error(err);
+    toast('could not read that photo');
+  }
+}
+
+function imageDimensions(dataUrl) {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => resolve({ width: img.naturalWidth, height: img.naturalHeight });
+    img.onerror = () => resolve({ width: null, height: null });
+    img.src = dataUrl;
+  });
+}
+
+function showStoryConfirm(dataUrl, dims) {
+  showModal(`
+    <div class="modal-handle"></div>
+    <h2>post this?</h2>
+    <img class="story-preview-img" src="${dataUrl}" alt="">
+    <input type="text" id="storyCaption" class="input" placeholder="caption (optional)" maxlength="120">
+    <button class="btn btn-primary" id="storyPost">post to story</button>
+    <button class="btn btn-ghost" id="storyBack">choose another</button>
+  `);
+  document.getElementById('storyPost').onclick = () => postStory(dataUrl, dims);
+  document.getElementById('storyBack').onclick = openStoryPicker;
+}
+
+async function postStory(dataUrl, dims) {
+  if (!supabase) return;
+  const btn = document.getElementById('storyPost');
+  const caption = (document.getElementById('storyCaption')?.value || '').trim();
+  if (btn) { btn.disabled = true; btn.textContent = 'posting…'; }
+
+  try {
+    const blob = await (await fetch(dataUrl)).blob();
+    const path = `stories/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.jpg`;
+    const { error: upErr } = await supabase.storage
+      .from(STORAGE_BUCKET)
+      .upload(path, blob, { contentType: 'image/jpeg', upsert: false });
+    if (upErr) throw upErr;
+
+    const { data: pub } = supabase.storage.from(STORAGE_BUCKET).getPublicUrl(path);
+    const id = 's_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6);
+
+    const { error } = await supabase.from('stories').insert({
+      id,
+      author: state.user,
+      url: pub.publicUrl,
+      storage_path: path,
+      width: dims.width,
+      height: dims.height,
+      caption: caption || null,
+    });
+    if (error) throw error;
+
+    markStorySeen(id);
+    await loadStories();
+    closeModal();
+    renderStoryRow();
+    await addCoins(250);
+    toast('+250 coins · story posted');
+  } catch (err) {
+    console.error('postStory', err);
+    toast('could not post the story');
+    if (btn) { btn.disabled = false; btn.textContent = 'post to story'; }
+  }
+}
+
+// ----- viewing stories -----
+let storyTimer = null;
+const STORY_DURATION = 5000;
+
+function openStoryViewer(who) {
+  const list = storiesOf(who);
+  if (!list.length) return;
+  const seen = seenStoryIds();
+  const firstUnseen = list.findIndex(s => !seen.has(s.id));
+  state.storyViewUser = who;
+  state.storyIndex = firstUnseen === -1 ? 0 : firstUnseen;
+  document.getElementById('storyViewer').classList.add('active');
+  renderStoryFrame();
+}
+
+function renderStoryFrame() {
+  const who = state.storyViewUser;
+  const list = storiesOf(who);
+  const i = state.storyIndex;
+  if (i < 0 || i >= list.length) { closeStoryViewer(); return; }
+  const story = list[i];
+
+  markStorySeen(story.id);
+
+  const profile = state.profile[who];
+  const name = profile?.name || (who === 'ivo' ? 'Ivo' : 'Nikolina');
+  const posted = new Date(story.created_at);
+  const ageMin = Math.floor((Date.now() - posted.getTime()) / 60000);
+  const ageLabel = ageMin < 1 ? 'just now'
+    : ageMin < 60 ? `${ageMin}m ago`
+    : `${Math.floor(ageMin / 60)}h ago`;
+  const leftMs = new Date(story.expires_at).getTime() - Date.now();
+  const leftH = Math.max(0, Math.floor(leftMs / 3600000));
+  const leftM = Math.max(0, Math.floor((leftMs % 3600000) / 60000));
+
+  const bars = list.map((s, idx) => `
+    <div class="story-progress-bar">
+      <div class="story-progress-fill ${idx < i ? 'done' : ''}" ${idx === i ? 'id="activeBar"' : ''}></div>
+    </div>
+  `).join('');
+
+  document.getElementById('storyViewer').innerHTML = `
+    <div class="story-progress">${bars}</div>
+    <div class="story-viewer-head">
+      ${avatarHtml(who, 'med')}
+      <div>
+        <div class="story-viewer-name">${escapeHtml(name)}</div>
+        <div class="story-viewer-time">${ageLabel}</div>
+      </div>
+      <button class="story-viewer-close" id="storyClose">×</button>
+    </div>
+    <div class="story-stage">
+      <img src="${story.url}" alt="">
+      <div class="story-nav">
+        <div id="storyPrev"></div>
+        <div id="storyNext"></div>
+      </div>
+    </div>
+    ${story.caption ? `<div class="story-caption">${escapeHtml(story.caption)}</div>` : ''}
+    <div class="story-expiry">
+      disappears in ${leftH}h ${leftM}m
+      ${who === state.user ? ' · <button class="story-delete" id="storyDelete">delete now</button>' : ''}
+    </div>
+  `;
+
+  document.getElementById('storyClose').onclick = closeStoryViewer;
+  document.getElementById('storyPrev').onclick = () => stepStory(-1);
+  document.getElementById('storyNext').onclick = () => stepStory(1);
+  const del = document.getElementById('storyDelete');
+  if (del) del.onclick = () => deleteStory(story);
+
+  // Animate the active progress bar, then move on.
+  const bar = document.getElementById('activeBar');
+  if (bar) {
+    bar.style.transition = 'none';
+    bar.style.width = '0%';
+    requestAnimationFrame(() => {
+      bar.style.transition = `width ${STORY_DURATION}ms linear`;
+      bar.style.width = '100%';
+    });
+  }
+  clearTimeout(storyTimer);
+  storyTimer = setTimeout(() => stepStory(1), STORY_DURATION);
+}
+
+function stepStory(dir) {
+  clearTimeout(storyTimer);
+  const list = storiesOf(state.storyViewUser);
+  const next = state.storyIndex + dir;
+  if (next < 0) { state.storyIndex = 0; renderStoryFrame(); return; }
+  if (next >= list.length) { closeStoryViewer(); return; }
+  state.storyIndex = next;
+  renderStoryFrame();
+}
+
+function closeStoryViewer() {
+  clearTimeout(storyTimer);
+  const v = document.getElementById('storyViewer');
+  v.classList.remove('active');
+  v.innerHTML = '';
+  renderStoryRow();
+}
+
+async function deleteStory(story) {
+  clearTimeout(storyTimer);
+  showConfirm('delete this story?', 'it will be gone for both of you.', async () => {
+    if (!supabase) return;
+    await supabase.from('stories').delete().eq('id', story.id);
+    if (story.storage_path) {
+      await supabase.storage.from(STORAGE_BUCKET).remove([story.storage_path]);
+    }
+    await loadStories();
+    closeStoryViewer();
+    toast('story deleted');
+  });
+}
+
 // ----- SETTINGS -----
 function renderSettings() {
   const me = state.user;
@@ -1683,6 +2183,7 @@ function setupRealtime() {
     .on('postgres_changes', { event: '*', schema: 'public', table: 'questions' }, () => reloadFromDb())
     .on('postgres_changes', { event: '*', schema: 'public', table: 'answers' },   () => reloadFromDb())
     .on('postgres_changes', { event: '*', schema: 'public', table: 'drawings' },  () => reloadFromDb())
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'stories' },   () => reloadFromDb())
     .subscribe();
 }
 
@@ -1702,6 +2203,12 @@ async function reloadFromDb() {
 
   // Data still gets refreshed in the background — we just don't rebuild the
   // screen under your fingers. The redraw happens as soon as you're done.
+  // Don't disturb a story that's currently being watched.
+  if (document.getElementById('storyViewer')?.classList.contains('active')) {
+    await loadAllState();
+    return;
+  }
+
   if (isComposing()) {
     if (!pendingReload) {
       pendingReload = true;
@@ -1741,7 +2248,7 @@ async function loadAllState() {
   state.coins.nikolina = cNiki ? parseInt(cNiki) : 0;
 
   // Questions, answers and drawings now come from their own tables.
-  await Promise.all([loadQuestions(), loadDrawings()]);
+  await Promise.all([loadQuestions(), loadDrawings(), loadStories()]);
 }
 
 // Build state.questions in the SAME shape the rest of the app already uses:
@@ -1802,6 +2309,8 @@ function wireEvents() {
   document.getElementById('setupAvatarFile').onchange = handleSetupAvatar;
   document.getElementById('setupContinueBtn').onclick = finishSetup;
   document.getElementById('checkinBtn').onclick = dailyCheckin;
+  document.getElementById('storyFile').onchange = handleStoryFile;
+  document.getElementById('storyCamera').onchange = handleStoryFile;
   document.getElementById('addEventBtn').onclick = openAddEvent;
   document.getElementById('askQuestionBtn').onclick = openAskQuestion;
   document.querySelectorAll('.filter-tab').forEach(t => {
