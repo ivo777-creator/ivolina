@@ -1,5 +1,5 @@
 // ===============================================================
-// IVOLINA v2.2.2 — story: hold to pause, pinch to zoom, 7s, likes
+// IVOLINA v2.2.3 — swipe to close, video stories, hold-release fix
 // ===============================================================
 import { createClient } from '@supabase/supabase-js';
 
@@ -622,6 +622,33 @@ textarea.input { resize: none; min-height: 100px; line-height: 1.5; }
 .story-liked-float .tiny-avatar { width: 26px; height: 26px; font-size: 11px; }
 .story-liked-float .lf-heart { font-size: 14px; color: #ff4d6d; }
 
+/* ===== STORY VIDEO (v2.2.3) ===== */
+.story-stage video {
+  max-width: 100%; max-height: 100%; object-fit: contain;
+  transform-origin: 50% 50%; will-change: transform; touch-action: none;
+  animation: storyIn 0.35s cubic-bezier(0.16,1,0.3,1);
+  background: #000;
+}
+.story-stage video.zooming { transition: none; }
+.story-stage video.settling { transition: transform 0.28s cubic-bezier(0.16,1,0.3,1); }
+.story-sound-btn {
+  position: absolute; left: 16px; bottom: 16px;
+  width: 44px; height: 44px; border-radius: 50%;
+  background: rgba(0,0,0,0.35); border: 1px solid rgba(255,255,255,0.25);
+  backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+  color: #fff; font-size: 18px; display: flex; align-items: center;
+  justify-content: center; cursor: pointer; z-index: 5; padding: 0;
+}
+.story-mute-hint {
+  position: absolute; bottom: 70px; left: 50%; transform: translateX(-50%);
+  background: rgba(0,0,0,0.55); color: rgba(255,255,255,0.9);
+  padding: 6px 14px; border-radius: 100px; font-size: 12px;
+  opacity: 0; transition: opacity 0.3s; pointer-events: none; white-space: nowrap;
+}
+.story-mute-hint.show { opacity: 1; }
+video.story-preview-img { width: 100%; max-height: 46vh; }
+.story-viewer { transition: transform 0.25s cubic-bezier(0.16,1,0.3,1), opacity 0.25s; }
+
 /* ===== CHAT ===== */
 .chat-divider { text-align: center; margin: 28px 0 16px; font-family: 'Fraunces', serif; font-style: italic; color: var(--text-muted); font-size: 13px; display: flex; align-items: center; gap: 10px; }
 .chat-divider::before, .chat-divider::after { content: ''; flex: 1; height: 1px; background: var(--glass-border); }
@@ -689,8 +716,8 @@ const HTML = `
       </div>
     </div>
     <div class="story-row" id="storyRow"></div>
-    <input type="file" id="storyFile" accept="image/*" style="display:none;">
-    <input type="file" id="storyCamera" accept="image/*" capture="user" style="display:none;">
+    <input type="file" id="storyFile" accept="image/*,video/*" style="display:none;">
+    <input type="file" id="storyCamera" accept="image/*,video/*" capture="user" style="display:none;">
     <div class="coins-bar">
       <div class="coins-display">
         <div class="coin-icon">★</div>
@@ -804,7 +831,7 @@ const HTML = `
       <div class="settings-row" id="logoutRow"><span class="settings-label" style="color: #ff95a5;">logout</span><span class="settings-value">›</span></div>
     </div>
     <div style="text-align: center; margin-top: 32px; color: var(--text-muted); font-size: 12px; font-family: 'Fraunces', serif; font-style: italic;">
-      ivolina v2.2.2 · made with love
+      ivolina v2.2.3 · made with love
     </div>
   </div>
 </div>
@@ -1899,14 +1926,37 @@ function renderGallery() {
 
 // Ask the database to delete anything older than 24 hours, then load
 // whatever is still alive.
-async function loadStories() {
+// Deletes everything past its 24 hours — the database row AND the media
+// file itself. Videos are big, so leaving orphaned files behind isn't an
+// option. This runs every time the app loads.
+async function purgeExpiredStories() {
   if (!supabase) return;
   try {
-    await supabase.rpc('purge_expired_stories');
+    const { data: dead, error } = await supabase
+      .from('stories')
+      .select('id, storage_path')
+      .lt('expires_at', new Date().toISOString());
+    if (error) throw error;
+    if (!dead || !dead.length) return;
+
+    const paths = dead.map(s => s.storage_path).filter(Boolean);
+    if (paths.length) {
+      const { error: rmErr } = await supabase.storage.from(STORAGE_BUCKET).remove(paths);
+      // If file removal fails we still drop the rows — an unreachable file
+      // is better than a story that refuses to expire.
+      if (rmErr) console.warn('story file cleanup failed', rmErr);
+    }
+    await supabase.from('stories').delete().in('id', dead.map(s => s.id));
   } catch (e) {
-    // Not fatal — we filter client-side too.
-    console.warn('purge_expired_stories unavailable', e);
+    console.warn('purgeExpiredStories', e);
+    // Fall back to the database-side function if it exists.
+    try { await supabase.rpc('purge_expired_stories'); } catch {}
   }
+}
+
+async function loadStories() {
+  if (!supabase) return;
+  await purgeExpiredStories();
   const { data, error } = await supabase
     .from('stories')
     .select('*')
@@ -1994,9 +2044,9 @@ function openStoryPicker() {
   showModal(`
     <div class="modal-handle"></div>
     <h2>add to your story</h2>
-    <p>it disappears after 24 hours</p>
+    <p>photo or video · disappears after 24 hours</p>
     <button class="btn btn-primary" id="storyFromGallery">choose from gallery</button>
-    <button class="btn btn-ghost" id="storyFromCamera">take a photo</button>
+    <button class="btn btn-ghost" id="storyFromCamera">take a photo or video</button>
     <button class="btn btn-ghost" id="storyCancel">cancel</button>
   `);
   document.getElementById('storyFromGallery').onclick = () => inp.click();
@@ -2019,10 +2069,29 @@ async function handleStoryFile(e) {
   `);
 
   try {
+    if (f.type.startsWith('video/')) {
+      if (f.size > MAX_VIDEO_BYTES) {
+        showModal(`
+          <div class="modal-handle"></div>
+          <h2>that video is too big</h2>
+          <p>${(f.size / 1048576).toFixed(0)} MB · the limit is ${MAX_VIDEO_BYTES / 1048576} MB.
+             Try trimming it shorter in the Photos app first.</p>
+          <button class="btn btn-primary" id="storyRetry">choose another</button>
+          <button class="btn btn-ghost" id="storyGiveUp">cancel</button>
+        `);
+        document.getElementById('storyRetry').onclick = openStoryPicker;
+        document.getElementById('storyGiveUp').onclick = closeModal;
+        return;
+      }
+      const meta = await videoMetadata(f);
+      showStoryConfirm(URL.createObjectURL(f), meta, { file: f, kind: 'video' });
+      return;
+    }
+
     // 1440px on the long edge keeps the original aspect ratio and stays sharp.
     const dataUrl = await resizeImageToDataUrl(f, 1440, 0.85);
     const dims = await imageDimensions(dataUrl);
-    showStoryConfirm(dataUrl, dims);
+    showStoryConfirm(dataUrl, dims, { kind: 'image' });
   } catch (err) {
     console.error('handleStoryFile', err);
     showModal(`
@@ -2037,6 +2106,27 @@ async function handleStoryFile(e) {
   }
 }
 
+// Videos are uploaded as-is (no re-encoding in the browser), so we cap the
+// size. 25 MB is roughly 30–45 seconds of iPhone video.
+const MAX_VIDEO_BYTES = 25 * 1024 * 1024;
+
+function videoMetadata(file) {
+  return new Promise((resolve) => {
+    const url = URL.createObjectURL(file);
+    const v = document.createElement('video');
+    v.preload = 'metadata';
+    v.onloadedmetadata = () => {
+      resolve({
+        width: v.videoWidth || null,
+        height: v.videoHeight || null,
+        duration: isFinite(v.duration) ? v.duration : null,
+      });
+    };
+    v.onerror = () => resolve({ width: null, height: null, duration: null });
+    v.src = url;
+  });
+}
+
 function imageDimensions(dataUrl) {
   return new Promise((resolve) => {
     const img = new Image();
@@ -2046,31 +2136,40 @@ function imageDimensions(dataUrl) {
   });
 }
 
-function showStoryConfirm(dataUrl, dims) {
+function showStoryConfirm(previewUrl, dims, meta = { kind: 'image' }) {
+  const isVideo = meta.kind === 'video';
+  const lengthNote = isVideo && dims.duration
+    ? `<p style="margin-bottom:12px;">${dims.duration.toFixed(0)} seconds</p>` : '';
   showModal(`
     <div class="modal-handle"></div>
     <h2>post this?</h2>
-    <img class="story-preview-img" src="${dataUrl}" alt="">
+    ${isVideo
+      ? `<video class="story-preview-img" src="${previewUrl}" controls playsinline preload="metadata"></video>`
+      : `<img class="story-preview-img" src="${previewUrl}" alt="">`}
+    ${lengthNote}
     <input type="text" id="storyCaption" class="input" placeholder="caption (optional)" maxlength="120">
     <button class="btn btn-primary" id="storyPost">post to story</button>
     <button class="btn btn-ghost" id="storyBack">choose another</button>
   `);
-  document.getElementById('storyPost').onclick = () => postStory(dataUrl, dims);
+  document.getElementById('storyPost').onclick = () => postStory(previewUrl, dims, meta);
   document.getElementById('storyBack').onclick = openStoryPicker;
 }
 
-async function postStory(dataUrl, dims) {
+async function postStory(previewUrl, dims, meta = { kind: 'image' }) {
   if (!supabase) return;
   const btn = document.getElementById('storyPost');
   const caption = (document.getElementById('storyCaption')?.value || '').trim();
-  if (btn) { btn.disabled = true; btn.textContent = 'posting…'; }
+  const isVideo = meta.kind === 'video';
+  if (btn) { btn.disabled = true; btn.textContent = isVideo ? 'uploading video…' : 'posting…'; }
 
   try {
-    const blob = await (await fetch(dataUrl)).blob();
-    const path = `stories/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.jpg`;
+    // Videos go up as the original file; photos were already shrunk.
+    const blob = isVideo ? meta.file : await (await fetch(previewUrl)).blob();
+    const ext = isVideo ? ((blob.type && blob.type.split('/')[1]) || 'mp4') : 'jpg';
+    const path = `stories/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
     const { error: upErr } = await supabase.storage
       .from(STORAGE_BUCKET)
-      .upload(path, blob, { contentType: 'image/jpeg', upsert: false });
+      .upload(path, blob, { contentType: blob.type || 'image/jpeg', upsert: false });
     if (upErr) throw upErr;
 
     const { data: pub } = supabase.storage.from(STORAGE_BUCKET).getPublicUrl(path);
@@ -2081,6 +2180,8 @@ async function postStory(dataUrl, dims) {
       author: state.user,
       url: pub.publicUrl,
       storage_path: path,
+      media_type: isVideo ? 'video' : 'image',
+      duration: isVideo ? (dims.duration || null) : null,
       width: dims.width,
       height: dims.height,
       caption: caption || null,
@@ -2092,7 +2193,7 @@ async function postStory(dataUrl, dims) {
     closeModal();
     renderStoryRow();
     await addCoins(250);
-    toast('+250 coins · story posted');
+    toast(isVideo ? '+250 coins · video posted' : '+250 coins · story posted');
   } catch (err) {
     console.error('postStory', err);
     toast('could not post the story');
@@ -2119,10 +2220,63 @@ function openStoryViewer(who) {
 }
 
 // ---- timer that can actually be paused ----
+// Photos run on a fixed 7s timer with a CSS-animated bar.
+// Videos run on their own playback clock instead, so the bar matches
+// the video however long it is.
+let videoRaf = null;
+
+function currentStoryIsVideo() {
+  return !!document.getElementById('storyVideo');
+}
+
+function stopVideoTracking() {
+  if (videoRaf) { cancelAnimationFrame(videoRaf); videoRaf = null; }
+}
+
+function trackVideoProgress() {
+  const vid = document.getElementById('storyVideo');
+  const bar = document.getElementById('activeBar');
+  if (!vid) return;
+  stopVideoTracking();
+  const tick = () => {
+    if (!vid.duration || !isFinite(vid.duration)) {
+      videoRaf = requestAnimationFrame(tick);
+      return;
+    }
+    if (bar) {
+      bar.style.transition = 'none';
+      bar.style.width = Math.min(100, (vid.currentTime / vid.duration) * 100) + '%';
+    }
+    videoRaf = requestAnimationFrame(tick);
+  };
+  videoRaf = requestAnimationFrame(tick);
+}
+
 function runStoryTimer() {
+  storyPaused = false;
+
+  if (currentStoryIsVideo()) {
+    const vid = document.getElementById('storyVideo');
+    if (vid) {
+      const p = vid.play();
+      if (p && p.catch) {
+        // iOS blocks sound-on autoplay in some situations. Fall back to
+        // muted playback rather than showing a frozen frame.
+        p.catch(() => {
+          vid.muted = true;
+          const hint = document.getElementById('storyMuteHint');
+          if (hint) hint.classList.add('show');
+          vid.play().catch(() => {});
+        });
+      }
+      trackVideoProgress();
+    }
+    clearTimeout(storyTimer);
+    return;
+  }
+
   const remaining = Math.max(0, STORY_DURATION - storyElapsed);
   storyStartedAt = Date.now();
-  storyPaused = false;
 
   const bar = document.getElementById('activeBar');
   if (bar) {
@@ -2142,6 +2296,16 @@ function runStoryTimer() {
 function pauseStory() {
   if (storyPaused) return;
   storyPaused = true;
+  const hint = document.getElementById('storyPausedHint');
+  if (hint) hint.classList.add('show');
+
+  if (currentStoryIsVideo()) {
+    const vid = document.getElementById('storyVideo');
+    if (vid) vid.pause();
+    stopVideoTracking();
+    return;
+  }
+
   clearTimeout(storyTimer);
   storyElapsed += Date.now() - storyStartedAt;
 
@@ -2152,8 +2316,6 @@ function pauseStory() {
     bar.style.transition = 'none';
     bar.style.width = frozen;
   }
-  const hint = document.getElementById('storyPausedHint');
-  if (hint) hint.classList.add('show');
 }
 
 function resumeStory() {
@@ -2181,10 +2343,6 @@ function renderStoryFrame() {
   const ageLabel = ageMin < 1 ? 'just now'
     : ageMin < 60 ? `${ageMin}m ago`
     : `${Math.floor(ageMin / 60)}h ago`;
-  const leftMs = new Date(story.expires_at).getTime() - Date.now();
-  const leftH = Math.max(0, Math.floor(leftMs / 3600000));
-  const leftM = Math.max(0, Math.floor((leftMs % 3600000) / 60000));
-
   const bars = list.map((s, idx) => `
     <div class="story-progress-bar">
       <div class="story-progress-fill ${idx < i ? 'done' : ''}" ${idx === i ? 'id="activeBar"' : ''}></div>
@@ -2215,8 +2373,13 @@ function renderStoryFrame() {
       <button class="story-viewer-close" id="storyClose">×</button>
     </div>
     <div class="story-stage" id="storyStage">
-      <img id="storyImg" src="${story.url}" alt="" draggable="false">
+      ${story.media_type === 'video'
+        ? `<video id="storyVideo" src="${story.url}" playsinline webkit-playsinline
+                 preload="auto" draggable="false"></video>`
+        : `<img id="storyImg" src="${story.url}" alt="" draggable="false">`}
       <div class="story-paused-hint" id="storyPausedHint">paused</div>
+      ${story.media_type === 'video' ? '<div class="story-mute-hint" id="storyMuteHint">tap the speaker for sound</div>' : ''}
+      ${story.media_type === 'video' ? '<button class="story-sound-btn" id="storySound" aria-label="sound">🔊</button>' : ''}
       <div class="story-nav" id="storyNav">
         <div id="storyPrev"></div>
         <div id="storyNext"></div>
@@ -2224,10 +2387,7 @@ function renderStoryFrame() {
       ${likeUi}
     </div>
     ${story.caption ? `<div class="story-caption">${escapeHtml(story.caption)}</div>` : ''}
-    <div class="story-expiry">
-      disappears in ${leftH}h ${leftM}m
-      ${isMine ? ' · <button class="story-delete" id="storyDelete">delete now</button>' : ''}
-    </div>
+    ${isMine ? '<div class="story-expiry"><button class="story-delete" id="storyDelete">delete now</button></div>' : ''}
   `;
 
   document.getElementById('storyClose').onclick = closeStoryViewer;
@@ -2236,6 +2396,22 @@ function renderStoryFrame() {
 
   const likeBtn = document.getElementById('storyLike');
   if (likeBtn) likeBtn.onclick = (e) => { e.stopPropagation(); toggleStoryLike(story); };
+
+  const vid = document.getElementById('storyVideo');
+  if (vid) {
+    vid.onended = () => stepStory(1);
+    vid.onerror = () => { console.error('video failed to load'); stepStory(1); };
+    const soundBtn = document.getElementById('storySound');
+    if (soundBtn) {
+      soundBtn.onclick = (e) => {
+        e.stopPropagation();
+        vid.muted = !vid.muted;
+        soundBtn.textContent = vid.muted ? '🔇' : '🔊';
+        const hint = document.getElementById('storyMuteHint');
+        if (hint) hint.classList.remove('show');
+      };
+    }
+  }
 
   // Park the floating "they liked it" badge somewhere pleasant and random-ish,
   // so it isn't always in the same spot.
@@ -2266,16 +2442,20 @@ function hashString(s) {
 // ---- hold to pause, pinch to zoom where your fingers are ----
 function setupStoryGestures(story) {
   const nav = document.getElementById('storyNav');
-  const img = document.getElementById('storyImg');
-  const prevZone = document.getElementById('storyPrev');
+  // Zoom applies to whichever medium is showing.
+  const img = document.getElementById('storyImg') || document.getElementById('storyVideo');
   if (!nav || !img) return;
 
   const HOLD_MS = 180;        // longer than this counts as a hold, not a tap
+  const CLOSE_DISTANCE = 110; // swipe down this far to dismiss
   let holdTimer = null;
   let didHold = false;
   let startX = 0, startY = 0;
   let pinch = null;
   let scale = 1;
+  let usedTouch = false;      // once true, ignore Safari's fake mouse events
+  let swipe = null;           // vertical dismiss gesture in progress
+  const viewer = document.getElementById('storyViewer');
 
   const dist = (a, b) => Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
 
@@ -2307,13 +2487,16 @@ function setupStoryGestures(story) {
   }
 
   nav.addEventListener('touchstart', (e) => {
+    usedTouch = true;
     if (e.touches.length === 2) {
       e.preventDefault();
+      swipe = null;
       beginPinch(e.touches[0], e.touches[1]);
       return;
     }
     if (e.touches.length === 1) {
       didHold = false;
+      swipe = null;
       startX = e.touches[0].clientX;
       startY = e.touches[0].clientY;
       clearTimeout(holdTimer);
@@ -2329,16 +2512,57 @@ function setupStoryGestures(story) {
       img.style.transform = `scale(${scale})`;
       return;
     }
-    if (e.touches.length === 1 && !didHold) {
-      // A real drag isn't a tap — cancel the pending hold.
-      const dx = Math.abs(e.touches[0].clientX - startX);
-      const dy = Math.abs(e.touches[0].clientY - startY);
-      if (dx > 12 || dy > 12) { clearTimeout(holdTimer); didHold = true; pauseStory(); }
+    if (e.touches.length === 1) {
+      const dx = e.touches[0].clientX - startX;
+      const dy = e.touches[0].clientY - startY;
+
+      // Downward drag = dismiss, like Instagram. Follows your finger.
+      if (swipe || (dy > 14 && Math.abs(dy) > Math.abs(dx) * 1.2)) {
+        e.preventDefault();
+        if (!swipe) {
+          swipe = true;
+          clearTimeout(holdTimer);
+          didHold = true;             // so releasing never counts as a tap
+          pauseStory();
+          if (viewer) viewer.style.transition = 'none';
+        }
+        const drag = Math.max(0, dy);
+        if (viewer) {
+          viewer.style.transform = `translateY(${drag}px)`;
+          viewer.style.opacity = String(Math.max(0.35, 1 - drag / 500));
+        }
+        return;
+      }
+
+      // Any other real drag isn't a tap — cancel the pending hold.
+      if (!didHold && (Math.abs(dx) > 12 || Math.abs(dy) > 12)) {
+        clearTimeout(holdTimer); didHold = true; pauseStory();
+      }
     }
   }, { passive: false });
 
   function endTouch(e) {
     clearTimeout(holdTimer);
+
+    // Released a downward swipe: far enough closes, otherwise spring back.
+    if (swipe) {
+      const endY = (e.changedTouches && e.changedTouches[0]) ? e.changedTouches[0].clientY : startY;
+      const dragged = Math.max(0, endY - startY);
+      swipe = null;
+      didHold = false;
+      if (viewer) viewer.style.transition = 'transform 0.25s cubic-bezier(0.16,1,0.3,1), opacity 0.25s';
+      if (dragged > CLOSE_DISTANCE) {
+        if (viewer) {
+          viewer.style.transform = `translateY(100%)`;
+          viewer.style.opacity = '0';
+        }
+        setTimeout(closeStoryViewer, 180);
+      } else {
+        if (viewer) { viewer.style.transform = ''; viewer.style.opacity = ''; }
+        resumeStory();
+      }
+      return;
+    }
 
     if (pinch) {
       // Second finger lifted, or both. Snap back and carry on.
@@ -2371,19 +2595,25 @@ function setupStoryGestures(story) {
     resumeStory();
   }, { passive: true });
 
-  // Mouse fallback so it still works on a laptop.
+  // Mouse fallback for laptops. Safari also fires fake mouse events right
+  // after every touch — those would navigate a second time and cause a
+  // story to skip after you let go of a hold. So once we've seen a touch,
+  // mouse handling is switched off for good.
   let mouseHold = null, mouseHeld = false;
-  nav.addEventListener('mousedown', (e) => {
+  nav.addEventListener('mousedown', () => {
+    if (usedTouch) return;
     mouseHeld = false;
     mouseHold = setTimeout(() => { mouseHeld = true; pauseStory(); }, HOLD_MS);
   });
   nav.addEventListener('mouseup', (e) => {
+    if (usedTouch) return;
     clearTimeout(mouseHold);
     if (mouseHeld) { mouseHeld = false; resumeStory(); return; }
     const rect = nav.getBoundingClientRect();
     stepStory(e.clientX - rect.left < rect.width / 2 ? -1 : 1);
   });
   nav.addEventListener('mouseleave', () => {
+    if (usedTouch) return;
     clearTimeout(mouseHold);
     if (mouseHeld) { mouseHeld = false; resumeStory(); }
   });
@@ -2482,10 +2712,15 @@ function stepStory(dir) {
 
 function closeStoryViewer() {
   clearTimeout(storyTimer);
+  stopVideoTracking();
   storyPaused = false;
   storyElapsed = 0;
   const v = document.getElementById('storyViewer');
   v.classList.remove('active');
+  // Undo anything the swipe-to-dismiss gesture left behind.
+  v.style.transition = '';
+  v.style.transform = '';
+  v.style.opacity = '';
   v.innerHTML = '';
   renderStoryRow();
 }
