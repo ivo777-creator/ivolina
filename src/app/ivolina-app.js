@@ -1,5 +1,5 @@
 // ===============================================================
-// IVOLINA v2.4.1 — drawing studio: brushes, colours, stickers, paper, text
+// IVOLINA v2.4.2 — fixes: dialogs hidden behind the editor, sticker placement
 // ===============================================================
 import { createClient } from '@supabase/supabase-js';
 
@@ -365,7 +365,7 @@ input, textarea { -webkit-user-select: text; user-select: text; }
 .login-name { font-family: 'Fraunces', serif; font-size: 24px; font-weight: 500; }
 .login-hint { font-size: 13px; color: var(--text-muted); margin-top: 2px; }
 
-.modal-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,0.7); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); display: none; align-items: flex-end; justify-content: center; z-index: 100; animation: fadeIn 0.3s ease; }
+.modal-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,0.7); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); display: none; align-items: flex-end; justify-content: center; z-index: 500; animation: fadeIn 0.3s ease; }
 .modal-backdrop.active { display: flex; }
 @media (min-width: 500px) { .modal-backdrop { align-items: center; } }
 .modal { background: var(--bg-2); border: 1px solid var(--glass-border); border-radius: 32px 32px 0 0; padding: 32px 24px calc(32px + env(safe-area-inset-bottom)); width: 100%; max-width: 480px; animation: slideUp 0.4s cubic-bezier(0.16,1,0.3,1); max-height: 90vh; overflow-y: auto; }
@@ -507,7 +507,7 @@ textarea.input { resize: none; min-height: 100px; line-height: 1.5; }
 .avatar-display { width: 88px; height: 88px; border-radius: 50%; margin: 8px auto 16px; background: linear-gradient(135deg, var(--accent), var(--accent-soft)); display: flex; align-items: center; justify-content: center; font-family: 'Fraunces', serif; font-size: 36px; color: white; overflow: hidden; position: relative; box-shadow: 0 8px 32px color-mix(in srgb, var(--accent) 40%, transparent); }
 .avatar-display img { width: 100%; height: 100%; object-fit: cover; }
 
-.toast { position: fixed; top: calc(env(safe-area-inset-top) + 16px); left: 50%; transform: translateX(-50%) translateY(-100px); background: var(--bg-2); border: 1px solid var(--glass-border); color: var(--text); padding: 12px 20px; border-radius: 100px; font-size: 14px; font-weight: 500; z-index: 200; transition: transform 0.4s cubic-bezier(0.16,1,0.3,1); box-shadow: 0 8px 32px rgba(0,0,0,0.4); max-width: calc(100vw - 40px); }
+.toast { position: fixed; top: calc(env(safe-area-inset-top) + 16px); left: 50%; transform: translateX(-50%) translateY(-100px); background: var(--bg-2); border: 1px solid var(--glass-border); color: var(--text); padding: 12px 20px; border-radius: 100px; font-size: 14px; font-weight: 500; z-index: 600; transition: transform 0.4s cubic-bezier(0.16,1,0.3,1); box-shadow: 0 8px 32px rgba(0,0,0,0.4); max-width: calc(100vw - 40px); }
 .toast.show { transform: translateX(-50%) translateY(0); }
 .empty { text-align: center; padding: 40px 20px; color: var(--text-muted); }
 .empty-icon { font-size: 40px; margin-bottom: 12px; opacity: 0.5; }
@@ -962,7 +962,7 @@ const HTML = `
       <div class="settings-row" id="logoutRow"><span class="settings-label" style="color: #ff95a5;">logout</span><span class="settings-value">›</span></div>
     </div>
     <div style="text-align: center; margin-top: 32px; color: var(--text-muted); font-size: 12px; font-family: 'Fraunces', serif; font-style: italic;">
-      ivolina v2.4.1 · made with love
+      ivolina v2.4.2 · made with love
     </div>
   </div>
 </div>
@@ -3379,6 +3379,7 @@ function wireEditorUi() {
   document.querySelectorAll('[data-panel]').forEach(b => {
     b.onclick = () => {
       editor.panel = editor.panel === b.dataset.panel ? null : b.dataset.panel;
+      if (b.dataset.panel === 'stickers' && editor.tool === 'text') editor.tool = 'pen';
       renderEditorUi();
     };
   });
@@ -3433,6 +3434,11 @@ function wireEditorUi() {
   document.querySelectorAll('[data-sticker]').forEach(b => {
     b.onclick = () => {
       editor.sticker = editor.sticker === b.dataset.sticker ? null : b.dataset.sticker;
+      if (editor.sticker) {
+        // Leave the text tool, or its tap handling would swallow the placement.
+        if (editor.tool === 'text') editor.tool = 'pen';
+        editor.activeText = null;
+      }
       renderEditorUi();
       if (editor.sticker) showEditorHint('tap the picture to place it');
     };
@@ -3827,6 +3833,24 @@ function attachEditorDrawing() {
   const start = (e) => {
     e.preventDefault();
 
+    // A sticker waiting to be placed always wins — otherwise the text
+    // tool swallows the tap and nothing appears to happen.
+    if (editor.sticker) {
+      const sp = pos(e);
+      editor.ops.push({
+        kind: 'sticker',
+        emoji: editor.sticker,
+        x: sp.x, y: sp.y,
+        size: Math.max(60, editor.width * 9),
+      });
+      editor.redo = [];
+      editor.sticker = null;
+      renderEditorUi();
+      redrawEditor();
+      updateEditorButtons();
+      return;
+    }
+
     // Two fingers on a selected text: resize it.
     if (e.touches && e.touches.length === 2 && editor.activeText != null) {
       const op = editor.ops[editor.activeText];
@@ -3854,21 +3878,6 @@ function attachEditorDrawing() {
     if (editor.tool === 'text' && hit == null) {
       editor.activeText = null;
       promptForText();
-      return;
-    }
-
-    // A sticker is waiting to be placed: drop it here instead of drawing.
-    if (editor.sticker) {
-      editor.ops.push({
-        kind: 'sticker',
-        emoji: editor.sticker,
-        x: p.x, y: p.y,
-        size: Math.max(60, editor.width * 9),
-      });
-      editor.redo = [];
-      editor.sticker = null;
-      renderEditorUi();
-      redrawEditor();
       return;
     }
 
