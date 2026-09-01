@@ -1,5 +1,5 @@
 // ===============================================================
-// IVOLINA v2.3 — real push notifications
+// IVOLINA v2.4 — drawing studio: brushes, colours, stickers, paper
 // ===============================================================
 import { createClient } from '@supabase/supabase-js';
 
@@ -13,7 +13,7 @@ if (SUPABASE_URL && SUPABASE_KEY) {
   });
 }
 
-const RELATIONSHIP_START = new Date('2026-05-08T00:00:00');
+const RELATIONSHIP_START = new Date('2026-08-27T00:00:00');
 
 const QUESTION_CATEGORIES = [
   { id: 'all',        label: 'all',        emoji: '\u2726' },
@@ -649,6 +649,129 @@ textarea.input { resize: none; min-height: 100px; line-height: 1.5; }
 video.story-preview-img { width: 100%; max-height: 46vh; }
 .story-viewer { transition: transform 0.25s cubic-bezier(0.16,1,0.3,1), opacity 0.25s; }
 
+/* ===== DRAWING STUDIO (v2.4) ===== */
+.editor-overlay {
+  position: fixed; inset: 0; z-index: 250; background: var(--bg-0);
+  display: none; flex-direction: column;
+  padding-top: env(safe-area-inset-top); padding-bottom: env(safe-area-inset-bottom);
+}
+.editor-overlay.active { display: flex; }
+
+.editor-top { display: flex; align-items: center; gap: 10px; padding: 10px 14px; }
+.editor-top h2 { font-family: 'Fraunces', serif; font-size: 18px; font-weight: 500; flex: 1; }
+.ed-icon-btn {
+  width: 38px; height: 38px; border-radius: 50%;
+  background: var(--glass); border: 1px solid var(--glass-border);
+  color: var(--text); font-size: 17px; display: flex; align-items: center;
+  justify-content: center; cursor: pointer; flex-shrink: 0; padding: 0;
+}
+.ed-icon-btn:disabled { opacity: 0.3; }
+.ed-done-btn {
+  background: linear-gradient(135deg, var(--accent), var(--accent-soft));
+  color: #0A0612; border: none; border-radius: 100px;
+  padding: 9px 18px; font-weight: 600; font-size: 14px; cursor: pointer;
+  font-family: inherit; flex-shrink: 0;
+}
+
+.editor-canvas-wrap {
+  flex: 1; display: flex; align-items: center; justify-content: center;
+  padding: 0 12px; min-height: 0; touch-action: none; position: relative;
+}
+#editorCanvas {
+  max-width: 100%; max-height: 100%; border-radius: 16px;
+  touch-action: none; display: block;
+  box-shadow: 0 12px 40px rgba(0,0,0,0.45);
+}
+.editor-hint {
+  position: absolute; bottom: 10px; left: 50%; transform: translateX(-50%);
+  background: rgba(0,0,0,0.6); color: rgba(255,255,255,0.9);
+  padding: 6px 14px; border-radius: 100px; font-size: 12px;
+  pointer-events: none; opacity: 0; transition: opacity 0.3s; white-space: nowrap;
+}
+.editor-hint.show { opacity: 1; }
+
+.editor-tools { padding: 10px 14px calc(10px + env(safe-area-inset-bottom)); }
+
+.tool-row { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 8px; scrollbar-width: none; }
+.tool-row::-webkit-scrollbar { display: none; }
+.tool-chip {
+  background: var(--glass); border: 1px solid var(--glass-border);
+  color: var(--text-dim); padding: 8px 13px; border-radius: 100px;
+  font-size: 13px; font-weight: 500; cursor: pointer; white-space: nowrap;
+  font-family: inherit; flex-shrink: 0; display: flex; align-items: center; gap: 5px;
+}
+.tool-chip.active { background: var(--accent); color: #0A0612; border-color: var(--accent); }
+
+.slider-row { display: flex; align-items: center; gap: 12px; padding: 8px 2px; }
+.slider-label { font-size: 11px; color: var(--text-muted); width: 46px; flex-shrink: 0; text-transform: uppercase; letter-spacing: 0.06em; }
+
+input.ed-slider {
+  -webkit-appearance: none; appearance: none;
+  flex: 1; height: 22px; border-radius: 11px; outline: none;
+  background: transparent; margin: 0; padding: 0;
+}
+input.ed-slider::-webkit-slider-runnable-track { height: 22px; border-radius: 11px; }
+input.ed-slider::-moz-range-track { height: 22px; border-radius: 11px; }
+input.ed-slider::-webkit-slider-thumb {
+  -webkit-appearance: none; appearance: none;
+  width: 26px; height: 26px; border-radius: 50%;
+  background: #fff; border: 3px solid var(--bg-0);
+  box-shadow: 0 2px 8px rgba(0,0,0,0.5); cursor: pointer; margin-top: -2px;
+}
+input.ed-slider::-moz-range-thumb {
+  width: 26px; height: 26px; border-radius: 50%;
+  background: #fff; border: 3px solid var(--bg-0);
+  box-shadow: 0 2px 8px rgba(0,0,0,0.5); cursor: pointer;
+}
+#colorSlider { background: linear-gradient(to right,
+  #000 0%, #ff0000 10%, #ffff00 25%, #00ff00 40%,
+  #00ffff 55%, #0000ff 70%, #ff00ff 85%, #fff 100%); }
+#widthSlider { background: var(--glass); border: 1px solid var(--glass-border); }
+
+.swatch-row { display: flex; gap: 7px; padding: 4px 0 8px; overflow-x: auto; scrollbar-width: none; }
+.swatch-row::-webkit-scrollbar { display: none; }
+.swatch {
+  width: 30px; height: 30px; border-radius: 50%; flex-shrink: 0;
+  cursor: pointer; border: 2px solid transparent; transition: transform 0.15s;
+}
+.swatch.active { border-color: #fff; transform: scale(1.12); }
+
+.color-preview {
+  width: 34px; height: 34px; border-radius: 50%; flex-shrink: 0;
+  border: 2px solid rgba(255,255,255,0.35); display: flex;
+  align-items: center; justify-content: center;
+}
+.width-dot { border-radius: 50%; background: #fff; }
+
+.sticker-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(46px, 1fr));
+  gap: 6px; max-height: 190px; overflow-y: auto; padding: 4px;
+  background: rgba(255,255,255,0.03); border-radius: 14px;
+}
+.sticker-btn {
+  aspect-ratio: 1; border: none; background: rgba(255,255,255,0.04);
+  border-radius: 10px; font-size: 24px; cursor: pointer; padding: 0;
+  display: flex; align-items: center; justify-content: center;
+}
+.sticker-btn.active { background: var(--accent); }
+
+.bg-grid { display: flex; gap: 8px; overflow-x: auto; padding: 4px 0; scrollbar-width: none; }
+.bg-grid::-webkit-scrollbar { display: none; }
+.bg-swatch {
+  width: 46px; height: 46px; border-radius: 12px; flex-shrink: 0;
+  cursor: pointer; border: 2px solid transparent; background-size: cover;
+}
+.bg-swatch.active { border-color: var(--accent); }
+
+.panel { display: none; padding-top: 6px; }
+.panel.open { display: block; animation: fadeIn 0.25s ease; }
+
+.gallery-new-btn {
+  width: 100%; border: 1px dashed var(--glass-border); background: var(--glass);
+  color: var(--text); border-radius: 20px; padding: 18px; font-size: 15px;
+  font-weight: 600; font-family: inherit; cursor: pointer; margin-bottom: 20px;
+}
+
 /* ===== CHAT ===== */
 .chat-divider { text-align: center; margin: 28px 0 16px; font-family: 'Fraunces', serif; font-style: italic; color: var(--text-muted); font-size: 13px; display: flex; align-items: center; gap: 10px; }
 .chat-divider::before, .chat-divider::after { content: ''; flex: 1; height: 1px; background: var(--glass-border); }
@@ -666,8 +789,25 @@ video.story-preview-img { width: 100%; max-height: 46vh; }
 .heart-mark { position: absolute; bottom: -8px; right: -6px; width: 20px; height: 20px; background: var(--bg-2); border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 11px; animation: heartPop 0.4s cubic-bezier(0.16,1,0.3,1); }
 .chat-msg.mine .heart-mark { right: auto; left: -6px; }
 
-.chat-composer { position: sticky; bottom: 12px; display: flex; gap: 8px; align-items: flex-end; background: var(--bg-2); border: 1px solid var(--glass-border); border-radius: 24px; padding: 8px; backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); }
-.chat-input { flex: 1; background: transparent; border: none; color: var(--text); font-family: inherit; font-size: 15px; padding: 10px 12px; resize: none; min-height: 24px; max-height: 120px; outline: none; }
+.chat-composer {
+  position: fixed; left: 12px; right: 12px;
+  bottom: calc(env(safe-area-inset-bottom) + 10px);
+  display: flex; gap: 8px; align-items: flex-end;
+  background: var(--bg-2); border: 1px solid var(--glass-border);
+  border-radius: 24px; padding: 8px;
+  backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+  box-shadow: 0 8px 32px rgba(0,0,0,0.45);
+  z-index: 40;
+  transition: transform 0.18s ease-out;
+}
+@media (min-width: 520px) { .chat-composer { left: 50%; right: auto; width: 480px; margin-left: -240px; } }
+/* Room so the last message isn't hidden behind the composer. */
+#screen-questionDetail.has-chat .app-content { padding-bottom: 120px; }
+.chat-input { flex: 1; background: transparent; border: none; color: var(--text); font-family: inherit; font-size: 16px; padding: 10px 12px; resize: none; min-height: 24px; max-height: 120px; outline: none; }
+
+/* iOS zooms the page whenever you tap a field smaller than 16px, and our
+   viewport then won't let you zoom back out. Never go below 16px here. */
+input, textarea, select { font-size: 16px !important; -webkit-text-size-adjust: 100%; }
 .chat-attach-btn { width: 40px; height: 40px; border-radius: 50%; background: rgba(255,255,255,0.05); border: 1px solid var(--glass-border); color: var(--text); cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 18px; flex-shrink: 0; }
 .chat-send-btn { width: 40px; height: 40px; border-radius: 50%; background: linear-gradient(135deg, var(--accent), var(--accent-soft)); color: #0A0612; border: none; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 18px; flex-shrink: 0; font-weight: 700; }
 .chat-send-btn:disabled { opacity: 0.4; cursor: default; }
@@ -786,23 +926,10 @@ const HTML = `
 <div id="screen-drawing" class="screen">
   <div class="app-header">
     <div class="back-btn" data-goto="home">‹</div>
-    <h1>drawing</h1>
+    <h1>drawings</h1>
   </div>
   <div class="app-content">
-    <div class="canvas-wrap"><canvas id="drawCanvas"></canvas></div>
-    <div class="draw-toolbar" id="drawToolbar">
-      <div class="color-dot active" style="background: #000;" data-color="#000"></div>
-      <div class="color-dot" style="background: #ff5e7a;" data-color="#ff5e7a"></div>
-      <div class="color-dot" style="background: #7BC4F5;" data-color="#7BC4F5"></div>
-      <div class="color-dot" style="background: #F4A8C8;" data-color="#F4A8C8"></div>
-      <div class="color-dot" style="background: #ffd56b;" data-color="#ffd56b"></div>
-      <div class="color-dot" style="background: #7ee0a5;" data-color="#7ee0a5"></div>
-    </div>
-    <div style="display: flex; gap: 8px; margin-bottom: 20px;">
-      <button class="tool-btn" style="margin-left: 0;" id="undoBtn">↶ undo</button>
-      <button class="tool-btn" style="margin-left: 0;" id="clearBtn">clear</button>
-      <button class="tool-btn" style="margin-left: auto; background: var(--accent); color: #0A0612; border-color: var(--accent);" id="saveBtn">save</button>
-    </div>
+    <button class="gallery-new-btn" id="newDrawingBtn">✎  start a new drawing</button>
     <div class="section-title">gallery</div>
     <div class="gallery-grid" id="galleryGrid"></div>
   </div>
@@ -835,13 +962,14 @@ const HTML = `
       <div class="settings-row" id="logoutRow"><span class="settings-label" style="color: #ff95a5;">logout</span><span class="settings-value">›</span></div>
     </div>
     <div style="text-align: center; margin-top: 32px; color: var(--text-muted); font-size: 12px; font-family: 'Fraunces', serif; font-style: italic;">
-      ivolina v2.3 · made with love
+      ivolina v2.4 · made with love
     </div>
   </div>
 </div>
 
 <div class="modal-backdrop" id="modalBackdrop"></div>
 <div class="story-viewer" id="storyViewer"></div>
+<div class="editor-overlay" id="editorOverlay"></div>
 <div class="toast" id="toast"></div>
 `;
 
@@ -1521,6 +1649,11 @@ function renderQuestionDetail() {
 
   wireChatHandlers(id);
 
+  const detail = document.getElementById('screen-questionDetail');
+  if (detail) detail.classList.toggle('has-chat', !!document.querySelector('.chat-composer'));
+  startKeyboardTracking();
+  updateComposerForKeyboard();
+
   // Put the drafts back.
   const newChat = document.getElementById('chatInput');
   if (newChat && draftChat) {
@@ -1584,6 +1717,13 @@ function wireChatHandlers(qid) {
   const sendBtn = document.getElementById('chatSendBtn');
   if (!input) return;
 
+  input.addEventListener('focus', () => {
+    // Give iOS a moment to put the keyboard up, then re-anchor.
+    setTimeout(() => { updateComposerForKeyboard(); scrollChatToBottom(); }, 250);
+  });
+  input.addEventListener('blur', () => {
+    setTimeout(updateComposerForKeyboard, 100);
+  });
   input.addEventListener('input', () => {
     sendBtn.disabled = input.value.trim().length === 0;
     // auto-grow
@@ -1816,97 +1956,40 @@ async function submitAnswer(id) {
   openQuestion(id);
 }
 
+
+// The composer is pinned to the bottom of the window. When the keyboard
+// opens, iOS shrinks the "visual viewport" but leaves the window alone,
+// so we lift the bar by exactly the height the keyboard is covering.
+let keyboardTracking = false;
+
+function updateComposerForKeyboard() {
+  const composer = document.querySelector('.chat-composer');
+  if (!composer) return;
+  const vv = window.visualViewport;
+  if (!vv) return;
+  const covered = Math.max(0, window.innerHeight - (vv.height + vv.offsetTop));
+  composer.style.transform = covered > 0 ? `translateY(-${covered}px)` : '';
+}
+
+function startKeyboardTracking() {
+  if (keyboardTracking) return;
+  const vv = window.visualViewport;
+  if (!vv) return;
+  keyboardTracking = true;
+  vv.addEventListener('resize', updateComposerForKeyboard);
+  vv.addEventListener('scroll', updateComposerForKeyboard);
+}
+
 // ----- DRAWING -----
 function initDrawing() {
-  const canvas = document.getElementById('drawCanvas');
-  state.drawCanvas = canvas;
-  const rect = canvas.getBoundingClientRect();
-  const dpr = window.devicePixelRatio || 1;
-  canvas.width = rect.width * dpr;
-  canvas.height = rect.height * dpr;
-  const ctx = canvas.getContext('2d');
-  ctx.scale(dpr, dpr);
-  ctx.lineCap = 'round';
-  ctx.lineJoin = 'round';
-  ctx.lineWidth = 3;
-  ctx.strokeStyle = state.drawColor;
-  state.drawCtx = ctx;
-  ctx.fillStyle = '#fff';
-  ctx.fillRect(0, 0, rect.width, rect.height);
-  state.drawHistory = [];
-  saveDrawState();
-  let drawing = false;
-  let last = null;
-  const getPos = (e) => {
-    const r = canvas.getBoundingClientRect();
-    const t = e.touches ? e.touches[0] : e;
-    return { x: t.clientX - r.left, y: t.clientY - r.top };
-  };
-  const start = (e) => {
-    e.preventDefault();
-    drawing = true;
-    last = getPos(e);
-    ctx.beginPath();
-    ctx.moveTo(last.x, last.y);
-    ctx.lineTo(last.x + 0.1, last.y + 0.1);
-    ctx.stroke();
-  };
-  const move = (e) => {
-    if (!drawing) return;
-    e.preventDefault();
-    const p = getPos(e);
-    ctx.beginPath();
-    ctx.moveTo(last.x, last.y);
-    ctx.lineTo(p.x, p.y);
-    ctx.strokeStyle = state.drawColor;
-    ctx.stroke();
-    last = p;
-  };
-  const end = () => {
-    if (!drawing) return;
-    drawing = false;
-    saveDrawState();
-  };
-  canvas.ontouchstart = start;
-  canvas.ontouchmove = move;
-  canvas.ontouchend = end;
-  canvas.onmousedown = start;
-  canvas.onmousemove = move;
-  canvas.onmouseup = end;
-  canvas.onmouseleave = end;
   renderGallery();
 }
 
-function saveDrawState() {
-  if (!state.drawCtx) return;
-  const c = state.drawCanvas;
-  state.drawHistory.push(state.drawCtx.getImageData(0, 0, c.width, c.height));
-  if (state.drawHistory.length > 30) state.drawHistory.shift();
-}
 
-function undoDraw() {
-  if (state.drawHistory.length < 2) return;
-  state.drawHistory.pop();
-  state.drawCtx.putImageData(state.drawHistory[state.drawHistory.length - 1], 0, 0);
-}
 
-function clearDraw() {
-  const c = state.drawCanvas;
-  const rect = c.getBoundingClientRect();
-  state.drawCtx.fillStyle = '#fff';
-  state.drawCtx.fillRect(0, 0, rect.width, rect.height);
-  saveDrawState();
-}
 
-function setColor(el, c) {
-  state.drawColor = c;
-  document.querySelectorAll('.color-dot').forEach(d => d.classList.remove('active'));
-  el.classList.add('active');
-}
 
-async function saveDrawing() {
-  const dataUrl = state.drawCanvas.toDataURL('image/jpeg', 0.7);
-  // Upload to storage; fallback to dataurl on failure (keeps v1 behavior)
+async function saveDrawing(dataUrl) {
   const url = await uploadImage(dataUrl, 'drawings');
   const stored = url || dataUrl;
   const id = 'd_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6);
@@ -1925,10 +2008,9 @@ async function saveDrawing() {
   if (!state.drawings.some(d => d.id === id)) {
     state.drawings.push({ id, author: state.user, dataurl: stored, created: Date.now() });
   }
-  notifyPartner(`${myName()} drew something`, 'take a look ✎', { tag: 'drawing' });
+  notifyPartner(`${myName()} drew something`, 'take a look \u270e', { tag: 'drawing' });
   await addCoins(150);
-  toast('+150 coins · saved');
-  clearDraw();
+  toast('+150 coins \u00b7 saved');
   renderGallery();
 }
 
@@ -2181,10 +2263,34 @@ function showStoryConfirm(previewUrl, dims, meta = { kind: 'image' }) {
     ${lengthNote}
     <input type="text" id="storyCaption" class="input" placeholder="caption (optional)" maxlength="120">
     <button class="btn btn-primary" id="storyPost">post to story</button>
+    ${isVideo ? '' : '<button class="btn btn-ghost" id="storyDecorate">✎ draw on it</button>'}
     <button class="btn btn-ghost" id="storyBack">choose another</button>
   `);
   document.getElementById('storyPost').onclick = () => postStory(previewUrl, dims, meta);
   document.getElementById('storyBack').onclick = openStoryPicker;
+  const dec = document.getElementById('storyDecorate');
+  if (dec) dec.onclick = () => decorateStory(previewUrl, dims, meta);
+}
+
+// Open the studio with the photo as the canvas, then come back here with
+// the decorated version ready to post.
+function decorateStory(previewUrl, dims, meta) {
+  const img = new Image();
+  img.crossOrigin = 'anonymous';
+  img.onload = () => {
+    closeModal();
+    openEditor({
+      mode: 'story',
+      image: img,
+      storyMeta: meta,
+      onDone: async (dataUrl) => {
+        const newDims = await imageDimensions(dataUrl);
+        showStoryConfirm(dataUrl, { ...newDims, duration: dims.duration }, { kind: 'image' });
+      },
+    });
+  };
+  img.onerror = () => toast('could not open the editor');
+  img.src = previewUrl;
 }
 
 async function postStory(previewUrl, dims, meta = { kind: 'image' }) {
@@ -2996,6 +3102,840 @@ async function openNotificationSettings() {
   document.getElementById('nCancel').onclick = closeModal;
 }
 
+
+// ===============================================================
+// DRAWING STUDIO (v2.4)
+// Used in two places: the drawing board, and decorating a photo
+// before it goes out as a story.
+//
+// Strokes and stickers are kept as a list of operations rather than
+// as bitmap snapshots, so undo is exact and memory stays small even
+// on a phone.
+// ===============================================================
+
+const BRUSHES = [
+  { id: 'pen',    label: 'pen',    icon: '✒️' },
+  { id: 'marker', label: 'marker', icon: '🖍' },
+  { id: 'neon',   label: 'neon',   icon: '✨' },
+  { id: 'chalk',  label: 'chalk',  icon: '🖌' },
+  { id: 'eraser', label: 'eraser', icon: '🩹' },
+];
+
+const SWATCHES = [
+  '#000000', '#ffffff', '#ff4d6d', '#ff8fab', '#F4A8C8',
+  '#7BC4F5', '#4A9FE0', '#7ee0a5', '#ffd56b', '#f5a623',
+  '#b47aff', '#8b5cf6', '#ff6b35', '#2d3142',
+];
+
+const STICKERS = [
+  '❤️','💕','💖','💘','💝','😍','🥰','😘','🤍','💌',
+  '🌸','🌹','🌷','🌻','✨','⭐','🌙','☀️','🌈','☁️',
+  '🎂','🎉','🎁','🍰','🥂','☕','🍕','🍓','🍦','🧸',
+  '✈️','🚗','🏠','🗺','📍','⏳','💍','👑','🔥','💫',
+];
+
+const TEXT_FONTS = [
+  { id: 'serif',  label: 'Classic', css: "'Fraunces', Georgia, serif" },
+  { id: 'sans',   label: 'Clean',   css: "'Inter', system-ui, sans-serif" },
+  { id: 'bold',   label: 'Strong',  css: "900 1em 'Inter', system-ui, sans-serif", weight: '900' },
+  { id: 'mono',   label: 'Typed',   css: "'Courier New', monospace" },
+  { id: 'script', label: 'Hand',    css: "'Snell Roundhand', 'Brush Script MT', cursive" },
+  { id: 'wide',   label: 'Wide',    css: "'Inter', system-ui, sans-serif", spacing: 0.18 },
+];
+
+const TEXT_BG_STYLES = [
+  { id: 'none',  label: 'none' },
+  { id: 'pill',  label: 'pill' },
+  { id: 'block', label: 'block' },
+];
+
+const BACKGROUNDS = [
+  { id: 'white',  label: 'white',  css: '#ffffff' },
+  { id: 'cream',  label: 'cream',  css: '#fdf6e3' },
+  { id: 'dark',   label: 'dark',   css: '#1a1625' },
+  { id: 'blush',  label: 'blush',  css: 'linear-gradient(135deg,#ffe3ec,#ffc9de)' },
+  { id: 'sky',    label: 'sky',    css: 'linear-gradient(135deg,#d8f0ff,#a8d8f5)' },
+  { id: 'sunset', label: 'sunset', css: 'linear-gradient(135deg,#ffd6a5,#ffadad)' },
+  { id: 'mint',   label: 'mint',   css: 'linear-gradient(135deg,#d9f7e7,#a8e6cf)' },
+  { id: 'grid',   label: 'grid',   css: '#ffffff', pattern: 'grid' },
+  { id: 'dots',   label: 'dots',   css: '#ffffff', pattern: 'dots' },
+  { id: 'lined',  label: 'lined',  css: '#ffffff', pattern: 'lined' },
+];
+
+const editor = {
+  open: false,
+  mode: 'board',        // 'board' | 'story'
+  canvas: null,
+  ctx: null,
+  ops: [],
+  redo: [],
+  tool: 'pen',
+  color: '#000000',
+  width: 6,
+  bg: BACKGROUNDS[0],
+  bgImage: null,        // an Image for story mode
+  sticker: null,        // emoji waiting to be placed
+  font: 'serif',
+  textBg: 'none',
+  activeText: null,     // index of the text being nudged about
+  panel: null,          // 'stickers' | 'background' | null
+  onDone: null,
+  storyMeta: null,
+};
+
+// Slider position 0..1000 -> colour. Black at the far left, a full
+// rainbow through the middle, white at the far right.
+function sliderToColor(v) {
+  const t = v / 1000;
+  if (t <= 0.08) {
+    const k = Math.round((t / 0.08) * 100);
+    return `hsl(0, 0%, ${Math.round(k * 0.12)}%)`;
+  }
+  if (t >= 0.92) {
+    const k = (t - 0.92) / 0.08;
+    return `hsl(0, 0%, ${Math.round(88 + k * 12)}%)`;
+  }
+  const hue = Math.round(((t - 0.08) / 0.84) * 340);
+  return `hsl(${hue}, 85%, 52%)`;
+}
+
+function openEditor(opts = {}) {
+  editor.open = true;
+  editor.mode = opts.mode || 'board';
+  editor.ops = [];
+  editor.redo = [];
+  editor.tool = 'pen';
+  editor.color = editor.mode === 'story' ? '#ffffff' : '#000000';
+  editor.width = 6;
+  editor.bg = BACKGROUNDS[0];
+  editor.bgImage = opts.image || null;
+  editor.sticker = null;
+  editor.panel = null;
+  editor.font = 'serif';
+  editor.textBg = 'none';
+  editor.activeText = null;
+  editor.onDone = opts.onDone || null;
+  editor.storyMeta = opts.storyMeta || null;
+
+  document.getElementById('editorOverlay').classList.add('active');
+  renderEditorUi();
+  sizeEditorCanvas();
+  redrawEditor();
+}
+
+function closeEditor() {
+  editor.open = false;
+  editor.bgImage = null;
+  editor.ops = [];
+  editor.redo = [];
+  document.getElementById('editorOverlay').classList.remove('active');
+}
+
+function renderEditorUi() {
+  const isStory = editor.mode === 'story';
+  const brushRow = BRUSHES.map(b =>
+    `<button class="tool-chip ${editor.tool === b.id ? 'active' : ''}" data-brush="${b.id}">${b.icon} ${b.label}</button>`
+  ).join('');
+
+  const swatches = SWATCHES.map(c =>
+    `<div class="swatch ${editor.color.toLowerCase() === c ? 'active' : ''}" data-swatch="${c}" style="background:${c}"></div>`
+  ).join('');
+
+  const stickerBtns = STICKERS.map(e =>
+    `<button class="sticker-btn ${editor.sticker === e ? 'active' : ''}" data-sticker="${e}">${e}</button>`
+  ).join('');
+
+  const bgSwatches = BACKGROUNDS.map(b =>
+    `<div class="bg-swatch ${editor.bg.id === b.id ? 'active' : ''}" data-bg="${b.id}" style="background:${b.css}"></div>`
+  ).join('');
+
+  document.getElementById('editorOverlay').innerHTML = `
+    <div class="editor-top">
+      <button class="ed-icon-btn" id="edClose">×</button>
+      <h2>${isStory ? 'decorate' : 'drawing'}</h2>
+      <button class="ed-icon-btn" id="edUndo" title="undo">↶</button>
+      <button class="ed-icon-btn" id="edRedo" title="redo">↷</button>
+      <button class="ed-icon-btn" id="edClear" title="clear">🗑</button>
+      <button class="ed-done-btn" id="edDone">${isStory ? 'next' : 'save'}</button>
+    </div>
+
+    <div class="editor-canvas-wrap" id="edCanvasWrap">
+      <canvas id="editorCanvas"></canvas>
+      <div class="editor-hint" id="edHint"></div>
+    </div>
+
+    <div class="editor-tools">
+      <div class="tool-row">
+        ${brushRow}
+        <button class="tool-chip ${editor.tool === 'text' ? 'active' : ''}" data-texttool="1">🅣 text</button>
+        <button class="tool-chip ${editor.panel === 'stickers' ? 'active' : ''}" data-panel="stickers">🌸 stickers</button>
+        ${isStory ? '' : `<button class="tool-chip ${editor.panel === 'background' ? 'active' : ''}" data-panel="background">🎨 paper</button>`}
+      </div>
+
+      <div class="slider-row">
+        <span class="slider-label">colour</span>
+        <input type="range" class="ed-slider" id="colorSlider" min="0" max="1000" value="0">
+        <span class="color-preview" id="colorPreview" style="background:${editor.color}"></span>
+      </div>
+
+      <div class="swatch-row" id="swatchRow">${swatches}</div>
+
+      <div class="slider-row">
+        <span class="slider-label">size</span>
+        <input type="range" class="ed-slider" id="widthSlider" min="1" max="60" value="${editor.width}">
+        <span class="color-preview" id="widthPreview">
+          <span class="width-dot" id="widthDot" style="width:${Math.min(26, editor.width)}px;height:${Math.min(26, editor.width)}px"></span>
+        </span>
+      </div>
+
+      <div class="panel ${editor.panel === 'text' ? 'open' : ''}" id="textPanel">
+        <div class="tool-row">
+          ${TEXT_FONTS.map(f => `<button class="tool-chip ${editor.font === f.id ? 'active' : ''}" data-font="${f.id}" style="font-family:${f.css.replace(/^900 1em /, '')}">${f.label}</button>`).join('')}
+        </div>
+        <div class="tool-row">
+          ${TEXT_BG_STYLES.map(b => `<button class="tool-chip ${editor.textBg === b.id ? 'active' : ''}" data-textbg="${b.id}">▢ ${b.label}</button>`).join('')}
+        </div>
+        <button class="btn btn-ghost" id="edAddText" style="margin:6px 0 0;">+ add text</button>
+      </div>
+
+      <div class="panel ${editor.panel === 'stickers' ? 'open' : ''}" id="stickerPanel">
+        <div class="sticker-grid">${stickerBtns}</div>
+      </div>
+
+      <div class="panel ${editor.panel === 'background' ? 'open' : ''}" id="bgPanel">
+        <div class="bg-grid">${bgSwatches}</div>
+      </div>
+    </div>
+  `;
+
+  wireEditorUi();
+}
+
+function wireEditorUi() {
+  const $ = (id) => document.getElementById(id);
+
+  $('edClose').onclick = () => {
+    if (editor.ops.length) {
+      showConfirm('discard this?', 'your drawing will be lost.', closeEditor);
+    } else {
+      closeEditor();
+    }
+  };
+  $('edUndo').onclick = undoEditor;
+  $('edRedo').onclick = redoEditor;
+  $('edClear').onclick = () => {
+    if (!editor.ops.length) return;
+    showConfirm('clear everything?', '', () => {
+      editor.redo = editor.ops.slice();
+      editor.ops = [];
+      redrawEditor();
+      updateEditorButtons();
+    });
+  };
+  $('edDone').onclick = finishEditor;
+
+  document.querySelectorAll('[data-brush]').forEach(b => {
+    b.onclick = () => {
+      editor.tool = b.dataset.brush;
+      editor.sticker = null;
+      editor.activeText = null;
+      editor.panel = null;
+      renderEditorUi();
+    };
+  });
+
+  document.querySelectorAll('[data-panel]').forEach(b => {
+    b.onclick = () => {
+      editor.panel = editor.panel === b.dataset.panel ? null : b.dataset.panel;
+      renderEditorUi();
+    };
+  });
+
+  document.querySelectorAll('[data-swatch]').forEach(sw => {
+    sw.onclick = () => {
+      editor.color = sw.dataset.swatch;
+      editor.tool = editor.tool === 'eraser' ? 'pen' : editor.tool;
+      editor.sticker = null;
+      if (editor.activeText != null && editor.ops[editor.activeText]) {
+        editor.ops[editor.activeText].color = editor.color;
+        redrawEditor();
+      }
+      renderEditorUi();
+    };
+  });
+
+  const tt = document.querySelector('[data-texttool]');
+  if (tt) tt.onclick = () => {
+    editor.tool = 'text';
+    editor.sticker = null;
+    editor.panel = editor.panel === 'text' ? null : 'text';
+    renderEditorUi();
+  };
+
+  const addTextBtn = document.getElementById('edAddText');
+  if (addTextBtn) addTextBtn.onclick = () => promptForText();
+
+  document.querySelectorAll('[data-font]').forEach(b => {
+    b.onclick = () => {
+      editor.font = b.dataset.font;
+      // Restyle the selected text straight away.
+      if (editor.activeText != null && editor.ops[editor.activeText]) {
+        editor.ops[editor.activeText].font = editor.font;
+        redrawEditor();
+      }
+      renderEditorUi();
+    };
+  });
+
+  document.querySelectorAll('[data-textbg]').forEach(b => {
+    b.onclick = () => {
+      editor.textBg = b.dataset.textbg;
+      if (editor.activeText != null && editor.ops[editor.activeText]) {
+        editor.ops[editor.activeText].bg = editor.textBg;
+        redrawEditor();
+      }
+      renderEditorUi();
+    };
+  });
+
+  document.querySelectorAll('[data-sticker]').forEach(b => {
+    b.onclick = () => {
+      editor.sticker = editor.sticker === b.dataset.sticker ? null : b.dataset.sticker;
+      renderEditorUi();
+      if (editor.sticker) showEditorHint('tap the picture to place it');
+    };
+  });
+
+  document.querySelectorAll('[data-bg]').forEach(b => {
+    b.onclick = () => {
+      editor.bg = BACKGROUNDS.find(x => x.id === b.dataset.bg) || BACKGROUNDS[0];
+      renderEditorUi();
+      redrawEditor();
+    };
+  });
+
+  const cs = $('colorSlider');
+  cs.oninput = () => {
+    editor.color = sliderToColor(parseInt(cs.value, 10));
+    if (editor.tool === 'eraser') editor.tool = 'pen';
+    editor.sticker = null;
+    $('colorPreview').style.background = editor.color;
+    document.querySelectorAll('[data-swatch]').forEach(x => x.classList.remove('active'));
+    if (editor.activeText != null && editor.ops[editor.activeText]) {
+      editor.ops[editor.activeText].color = editor.color;
+      redrawEditor();
+    }
+  };
+
+  const ws = $('widthSlider');
+  ws.oninput = () => {
+    editor.width = parseInt(ws.value, 10);
+    const d = $('widthDot');
+    const px = Math.max(3, Math.min(26, editor.width));
+    d.style.width = px + 'px';
+    d.style.height = px + 'px';
+  };
+
+  attachEditorDrawing();
+  updateEditorButtons();
+}
+
+function showEditorHint(text) {
+  const h = document.getElementById('edHint');
+  if (!h) return;
+  h.textContent = text;
+  h.classList.add('show');
+  clearTimeout(showEditorHint._t);
+  showEditorHint._t = setTimeout(() => h.classList.remove('show'), 1800);
+}
+
+function updateEditorButtons() {
+  const u = document.getElementById('edUndo');
+  const r = document.getElementById('edRedo');
+  if (u) u.disabled = editor.ops.length === 0;
+  if (r) r.disabled = editor.redo.length === 0;
+}
+
+function sizeEditorCanvas() {
+  const canvas = document.getElementById('editorCanvas');
+  const wrap = document.getElementById('edCanvasWrap');
+  if (!canvas || !wrap) return;
+
+  const availW = wrap.clientWidth || 340;
+  const availH = wrap.clientHeight || 380;
+
+  // Story keeps the photo's own shape; the drawing board is square.
+  let ratio = 1;
+  if (editor.mode === 'story' && editor.bgImage && editor.bgImage.naturalHeight) {
+    ratio = editor.bgImage.naturalWidth / editor.bgImage.naturalHeight;
+  }
+
+  let w = availW;
+  let h = w / ratio;
+  if (h > availH) { h = availH; w = h * ratio; }
+
+  const dpr = Math.min(2, window.devicePixelRatio || 1);
+  canvas.style.width = Math.round(w) + 'px';
+  canvas.style.height = Math.round(h) + 'px';
+  canvas.width = Math.round(w * dpr);
+  canvas.height = Math.round(h * dpr);
+
+  editor.canvas = canvas;
+  editor.ctx = canvas.getContext('2d');
+}
+
+function paintBackground(ctx, W, H) {
+  if (editor.mode === 'story' && editor.bgImage) {
+    ctx.drawImage(editor.bgImage, 0, 0, W, H);
+    return;
+  }
+  const bg = editor.bg;
+
+  if (bg.css.startsWith('linear-gradient')) {
+    // Pull the two colours out of the CSS so we can paint the same thing.
+    const cols = bg.css.match(/#[0-9a-f]{6}/gi) || ['#ffffff', '#eeeeee'];
+    const g = ctx.createLinearGradient(0, 0, W, H);
+    g.addColorStop(0, cols[0]);
+    g.addColorStop(1, cols[1] || cols[0]);
+    ctx.fillStyle = g;
+  } else {
+    ctx.fillStyle = bg.css;
+  }
+  ctx.fillRect(0, 0, W, H);
+
+  if (bg.pattern) {
+    ctx.save();
+    ctx.strokeStyle = 'rgba(80,90,120,0.20)';
+    ctx.fillStyle = 'rgba(80,90,120,0.25)';
+    ctx.lineWidth = Math.max(1, W / 500);
+    const step = W / 14;
+    if (bg.pattern === 'grid') {
+      for (let x = step; x < W; x += step) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke(); }
+      for (let y = step; y < H; y += step) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke(); }
+    } else if (bg.pattern === 'lined') {
+      for (let y = step; y < H; y += step) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke(); }
+    } else if (bg.pattern === 'dots') {
+      const r = Math.max(1, W / 300);
+      for (let x = step; x < W; x += step) {
+        for (let y = step; y < H; y += step) {
+          ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill();
+        }
+      }
+    }
+    ctx.restore();
+  }
+}
+
+function applyBrush(ctx, op, W) {
+  const px = op.width * (W / 1000);
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  ctx.globalAlpha = 1;
+  ctx.shadowBlur = 0;
+  ctx.globalCompositeOperation = 'source-over';
+
+  switch (op.tool) {
+    case 'marker':
+      ctx.globalAlpha = 0.4;
+      ctx.lineWidth = px * 2.1;
+      ctx.strokeStyle = op.color;
+      break;
+    case 'neon':
+      ctx.lineWidth = px;
+      ctx.strokeStyle = op.color;
+      ctx.shadowBlur = px * 2.6;
+      ctx.shadowColor = op.color;
+      break;
+    case 'chalk':
+      ctx.globalAlpha = 0.75;
+      ctx.lineWidth = px * 1.35;
+      ctx.strokeStyle = op.color;
+      break;
+    case 'eraser':
+      ctx.globalCompositeOperation = 'destination-out';
+      ctx.lineWidth = px * 1.8;
+      ctx.strokeStyle = 'rgba(0,0,0,1)';
+      break;
+    default:
+      ctx.lineWidth = px;
+      ctx.strokeStyle = op.color;
+  }
+}
+
+// Ink lives on its own layer so the eraser can rub out strokes
+// without punching a hole in the background or the photo.
+function redrawEditor() {
+  const canvas = editor.canvas || document.getElementById('editorCanvas');
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  const W = canvas.width, H = canvas.height;
+
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.clearRect(0, 0, W, H);
+  paintBackground(ctx, W, H);
+
+  const ink = document.createElement('canvas');
+  ink.width = W; ink.height = H;
+  const ictx = ink.getContext ? ink.getContext('2d') : null;
+
+  // Without a working second layer we simply draw straight onto the
+  // canvas. The eraser is the only thing that behaves differently.
+  const target = ictx || ctx;
+
+  editor.ops.forEach(op => {
+    if (op.kind === 'stroke') {
+      if (op.points.length < 2) {
+        // A single tap still leaves a dot.
+        applyBrush(target, op, W);
+        const p = op.points[0];
+        target.beginPath();
+        target.arc(p.x * W, p.y * H, Math.max(0.6, target.lineWidth / 2), 0, Math.PI * 2);
+        target.fillStyle = op.tool === 'eraser' ? 'rgba(0,0,0,1)' : op.color;
+        target.fill();
+        return;
+      }
+      applyBrush(target, op, W);
+      target.beginPath();
+      target.moveTo(op.points[0].x * W, op.points[0].y * H);
+      for (let i = 1; i < op.points.length; i++) {
+        target.lineTo(op.points[i].x * W, op.points[i].y * H);
+      }
+      target.stroke();
+    } else if (op.kind === 'text') {
+      target.globalCompositeOperation = 'source-over';
+      target.globalAlpha = 1;
+      target.shadowBlur = 0;
+      drawTextOp(target, op, W, H);
+    } else if (op.kind === 'sticker') {
+      target.globalCompositeOperation = 'source-over';
+      target.globalAlpha = 1;
+      target.shadowBlur = 0;
+      const size = op.size * (W / 1000);
+      target.font = `${size}px system-ui, "Apple Color Emoji", sans-serif`;
+      target.textAlign = 'center';
+      target.textBaseline = 'middle';
+      target.fillText(op.emoji, op.x * W, op.y * H);
+    }
+  });
+
+  ctx.globalAlpha = 1;
+  ctx.globalCompositeOperation = 'source-over';
+  ctx.shadowBlur = 0;
+  if (ictx) ctx.drawImage(ink, 0, 0);
+}
+
+
+function fontCssFor(op, sizePx) {
+  const f = TEXT_FONTS.find(x => x.id === op.font) || TEXT_FONTS[0];
+  const family = f.css.replace(/^900 1em /, '');
+  const weight = f.weight ? f.weight + ' ' : '';
+  return `${weight}${sizePx}px ${family}`;
+}
+
+function drawTextOp(ctx, op, W, H) {
+  const size = op.size * (W / 1000);
+  const f = TEXT_FONTS.find(x => x.id === op.font) || TEXT_FONTS[0];
+  ctx.font = fontCssFor(op, size);
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+
+  const lines = String(op.text).split('\n');
+  const lineH = size * 1.22;
+  const spacing = f.spacing ? size * f.spacing : 0;
+
+  const widths = lines.map(l => ctx.measureText(l).width + spacing * Math.max(0, l.length - 1));
+  const maxW = Math.max(...widths, 1);
+  const totalH = lineH * lines.length;
+  const cx = op.x * W;
+  const cy = op.y * H;
+
+  // Optional plate behind the words.
+  if (op.bg && op.bg !== 'none') {
+    const padX = size * 0.45;
+    const padY = size * 0.28;
+    const bw = maxW + padX * 2;
+    const bh = totalH + padY * 2;
+    const x = cx - bw / 2;
+    const y = cy - bh / 2;
+    const r = op.bg === 'pill' ? bh / 2 : size * 0.18;
+    ctx.fillStyle = isLightColor(op.color) ? 'rgba(0,0,0,0.55)' : 'rgba(255,255,255,0.88)';
+    roundRect(ctx, x, y, bw, bh, r);
+    ctx.fill();
+  }
+
+  ctx.fillStyle = op.color;
+  lines.forEach((line, i) => {
+    const y = cy - totalH / 2 + lineH * (i + 0.5);
+    if (spacing) {
+      // Letter spacing has to be done by hand on a canvas.
+      const chars = [...line];
+      const lineW = ctx.measureText(line).width + spacing * Math.max(0, chars.length - 1);
+      let x = cx - lineW / 2;
+      ctx.textAlign = 'left';
+      chars.forEach(ch => {
+        ctx.fillText(ch, x, y);
+        x += ctx.measureText(ch).width + spacing;
+      });
+      ctx.textAlign = 'center';
+    } else {
+      ctx.fillText(line, cx, y);
+    }
+  });
+}
+
+function roundRect(ctx, x, y, w, h, r) {
+  const rad = Math.min(r, w / 2, h / 2);
+  ctx.beginPath();
+  ctx.moveTo(x + rad, y);
+  ctx.arcTo(x + w, y, x + w, y + h, rad);
+  ctx.arcTo(x + w, y + h, x, y + h, rad);
+  ctx.arcTo(x, y + h, x, y, rad);
+  ctx.arcTo(x, y, x + w, y, rad);
+  ctx.closePath();
+}
+
+function isLightColor(col) {
+  if (!col) return false;
+  if (col.startsWith('hsl')) {
+    const m = col.match(/hsl\([^,]+,[^,]+,\s*([\d.]+)%/);
+    return m ? parseFloat(m[1]) > 62 : false;
+  }
+  const hex = col.replace('#', '');
+  if (hex.length !== 6) return false;
+  const r = parseInt(hex.slice(0, 2), 16);
+  const g = parseInt(hex.slice(2, 4), 16);
+  const b = parseInt(hex.slice(4, 6), 16);
+  return (r * 299 + g * 587 + b * 114) / 1000 > 165;
+}
+
+// Ask for the words, then drop them in the middle where they can be moved.
+function promptForText(existingIndex = null) {
+  const existing = existingIndex != null ? editor.ops[existingIndex] : null;
+  showModal(`
+    <div class="modal-handle"></div>
+    <h2>${existing ? 'edit text' : 'add text'}</h2>
+    <p>two fingers on the picture to resize it</p>
+    <textarea id="edTextInput" class="input" placeholder="type something..." style="min-height:90px;">${existing ? escapeHtml(existing.text) : ''}</textarea>
+    <button class="btn btn-primary" id="edTextOk">${existing ? 'save' : 'place it'}</button>
+    ${existing ? '<button class="btn btn-danger" id="edTextDel">delete this text</button>' : ''}
+    <button class="btn btn-ghost" id="edTextCancel">cancel</button>
+  `);
+  setTimeout(() => document.getElementById('edTextInput')?.focus(), 120);
+
+  document.getElementById('edTextOk').onclick = () => {
+    const val = document.getElementById('edTextInput').value.trim();
+    if (!val) { toast('type something first'); return; }
+    if (existing) {
+      existing.text = val;
+      existing.font = editor.font;
+      existing.bg = editor.textBg;
+      existing.color = editor.color;
+    } else {
+      editor.ops.push({
+        kind: 'text',
+        text: val,
+        x: 0.5, y: 0.5,
+        size: 90,
+        font: editor.font,
+        color: editor.color,
+        bg: editor.textBg,
+      });
+      editor.redo = [];
+      editor.activeText = editor.ops.length - 1;
+    }
+    closeModal();
+    renderEditorUi();
+    redrawEditor();
+    showEditorHint('drag to move · two fingers to resize');
+  };
+
+  const del = document.getElementById('edTextDel');
+  if (del) del.onclick = () => {
+    editor.ops.splice(existingIndex, 1);
+    editor.activeText = null;
+    closeModal();
+    renderEditorUi();
+    redrawEditor();
+  };
+  document.getElementById('edTextCancel').onclick = closeModal;
+}
+
+// Which text (if any) is under this point?
+function textAt(px, py) {
+  for (let i = editor.ops.length - 1; i >= 0; i--) {
+    const op = editor.ops[i];
+    if (op.kind !== 'text') continue;
+    const halfW = 0.42;
+    const halfH = (op.size / 1000) * 0.9;
+    if (Math.abs(px - op.x) < halfW && Math.abs(py - op.y) < Math.max(0.05, halfH)) return i;
+  }
+  return null;
+}
+
+function attachEditorDrawing() {
+  const canvas = document.getElementById('editorCanvas');
+  if (!canvas) return;
+
+  let drawing = false;
+  let current = null;
+  let dragText = null;      // text being moved with one finger
+  let pinchText = null;     // text being resized with two
+
+  const dist = (a, b) => Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
+
+  const pos = (e) => {
+    const r = canvas.getBoundingClientRect();
+    const t = e.touches ? e.touches[0] : e;
+    return {
+      x: Math.min(1, Math.max(0, (t.clientX - r.left) / r.width)),
+      y: Math.min(1, Math.max(0, (t.clientY - r.top) / r.height)),
+    };
+  };
+
+  const start = (e) => {
+    e.preventDefault();
+
+    // Two fingers on a selected text: resize it.
+    if (e.touches && e.touches.length === 2 && editor.activeText != null) {
+      const op = editor.ops[editor.activeText];
+      if (op && op.kind === 'text') {
+        pinchText = { startDist: dist(e.touches[0], e.touches[1]), startSize: op.size, index: editor.activeText };
+        drawing = false;
+        current = null;
+        return;
+      }
+    }
+
+    const p = pos(e);
+
+    // Tapping an existing text picks it up rather than drawing over it.
+    const hit = textAt(p.x, p.y);
+    if (hit != null && (editor.tool === 'text' || editor.activeText === hit)) {
+      editor.activeText = hit;
+      dragText = { index: hit, grabX: p.x - editor.ops[hit].x, grabY: p.y - editor.ops[hit].y, moved: false };
+      renderEditorUi();
+      redrawEditor();
+      return;
+    }
+
+    // Text tool on empty space: ask for the words.
+    if (editor.tool === 'text' && hit == null) {
+      editor.activeText = null;
+      promptForText();
+      return;
+    }
+
+    // A sticker is waiting to be placed: drop it here instead of drawing.
+    if (editor.sticker) {
+      editor.ops.push({
+        kind: 'sticker',
+        emoji: editor.sticker,
+        x: p.x, y: p.y,
+        size: Math.max(60, editor.width * 9),
+      });
+      editor.redo = [];
+      editor.sticker = null;
+      renderEditorUi();
+      redrawEditor();
+      return;
+    }
+
+    drawing = true;
+    current = { kind: 'stroke', tool: editor.tool, color: editor.color, width: editor.width, points: [p] };
+    editor.ops.push(current);
+    editor.redo = [];
+    redrawEditor();
+  };
+
+  const move = (e) => {
+    // Two-finger resize
+    if (pinchText && e.touches && e.touches.length === 2) {
+      e.preventDefault();
+      const op = editor.ops[pinchText.index];
+      if (op) {
+        const factor = dist(e.touches[0], e.touches[1]) / pinchText.startDist;
+        op.size = Math.max(24, Math.min(400, pinchText.startSize * factor));
+        redrawEditor();
+      }
+      return;
+    }
+
+    // One-finger move
+    if (dragText) {
+      e.preventDefault();
+      const p = pos(e);
+      const op = editor.ops[dragText.index];
+      if (op) {
+        op.x = Math.min(0.98, Math.max(0.02, p.x - dragText.grabX));
+        op.y = Math.min(0.98, Math.max(0.02, p.y - dragText.grabY));
+        dragText.moved = true;
+        redrawEditor();
+      }
+      return;
+    }
+
+    if (!drawing || !current) return;
+    e.preventDefault();
+    const p = pos(e);
+    const last = current.points[current.points.length - 1];
+    // Skip points that are practically on top of each other.
+    if (Math.abs(p.x - last.x) < 0.002 && Math.abs(p.y - last.y) < 0.002) return;
+    current.points.push(p);
+    redrawEditor();
+  };
+
+  const end = () => {
+    if (pinchText) { pinchText = null; updateEditorButtons(); return; }
+    if (dragText) {
+      // A tap without moving opens it for editing.
+      if (!dragText.moved) promptForText(dragText.index);
+      dragText = null;
+      updateEditorButtons();
+      return;
+    }
+    if (!drawing) return;
+    drawing = false;
+    current = null;
+    updateEditorButtons();
+  };
+
+  canvas.addEventListener('touchstart', start, { passive: false });
+  canvas.addEventListener('touchmove', move, { passive: false });
+  canvas.addEventListener('touchend', end, { passive: true });
+  canvas.addEventListener('touchcancel', end, { passive: true });
+  canvas.addEventListener('mousedown', start);
+  canvas.addEventListener('mousemove', move);
+  canvas.addEventListener('mouseup', end);
+  canvas.addEventListener('mouseleave', end);
+}
+
+function undoEditor() {
+  if (!editor.ops.length) return;
+  editor.redo.push(editor.ops.pop());
+  redrawEditor();
+  updateEditorButtons();
+}
+
+function redoEditor() {
+  if (!editor.redo.length) return;
+  editor.ops.push(editor.redo.pop());
+  redrawEditor();
+  updateEditorButtons();
+}
+
+async function finishEditor() {
+  const canvas = editor.canvas || document.getElementById('editorCanvas');
+  if (!canvas) return;
+
+  // Render once more at a good size for saving.
+  const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
+  const cb = editor.onDone;
+  const meta = editor.storyMeta;
+  closeEditor();
+  if (cb) await cb(dataUrl, meta);
+}
+
+
 // ----- SETTINGS -----
 function renderSettings() {
   const me = state.user;
@@ -3260,12 +4200,9 @@ function wireEvents() {
   document.querySelectorAll('.filter-tab').forEach(t => {
     t.onclick = () => filterQuestions(t.dataset.filter);
   });
-  document.getElementById('drawToolbar').querySelectorAll('.color-dot').forEach(d => {
-    d.onclick = () => setColor(d, d.dataset.color);
-  });
-  document.getElementById('undoBtn').onclick = undoDraw;
-  document.getElementById('clearBtn').onclick = clearDraw;
-  document.getElementById('saveBtn').onclick = saveDrawing;
+  document.getElementById('newDrawingBtn').onclick = () => {
+    openEditor({ mode: 'board', onDone: (dataUrl) => saveDrawing(dataUrl) });
+  };
   document.getElementById('settingsAvatarBtn').onclick = () => document.getElementById('settingsAvatarFile').click();
   document.getElementById('settingsAvatarFile').onchange = handleSettingsAvatar;
   document.getElementById('changeNameRow').onclick = changeName;
