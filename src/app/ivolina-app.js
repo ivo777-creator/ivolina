@@ -1,5 +1,5 @@
 // ===============================================================
-// IVOLINA v2 — adds profile avatars on home/answers + per-question chat
+// IVOLINA v2.1 — real tables for questions/answers/drawings (no more overwrites)
 // ===============================================================
 import { createClient } from '@supabase/supabase-js';
 
@@ -309,12 +309,13 @@ textarea.input { resize: none; min-height: 100px; line-height: 1.5; }
 .feature-card.full { grid-column: 1 / -1; aspect-ratio: auto; padding: 24px; min-height: 130px; }
 .feature-card.full .feature-title { font-size: 22px; }
 
-.feature-card.drawing-preview { grid-column: 1 / -1; aspect-ratio: auto; padding: 16px; display: flex; flex-direction: row; align-items: center; gap: 16px; }
-.drawing-preview-img { width: 88px; height: 88px; border-radius: 16px; background: #fff; overflow: hidden; flex-shrink: 0; }
-.drawing-preview-img img { width: 100%; height: 100%; object-fit: cover; }
-.drawing-preview-info { flex: 1; min-width: 0; }
-.drawing-preview-info .feature-title { font-size: 18px; }
+.feature-card.drawing-preview { grid-column: 1 / -1; aspect-ratio: auto; padding: 18px; display: flex; flex-direction: column; gap: 14px; }
+.drawing-preview-img { width: 100%; aspect-ratio: 1; border-radius: 18px; background: #fff; overflow: hidden; }
+.drawing-preview-img img { width: 100%; height: 100%; object-fit: contain; background: #fff; }
+.drawing-preview-info { min-width: 0; display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; }
+.drawing-preview-info .feature-title { font-size: 20px; }
 .drawing-preview-meta { font-size: 11px; color: var(--text-muted); margin-top: 4px; }
+.drawing-preview-cta { font-size: 12px; color: var(--accent); font-weight: 600; white-space: nowrap; }
 .feature-card.questions-preview { grid-column: 1 / -1; aspect-ratio: auto; padding: 22px; min-height: 160px; }
 .questions-preview-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
 .questions-preview-list { display: flex; flex-direction: column; gap: 6px; }
@@ -582,7 +583,7 @@ const HTML = `
       <div class="settings-row" id="logoutRow"><span class="settings-label" style="color: #ff95a5;">logout</span><span class="settings-value">›</span></div>
     </div>
     <div style="text-align: center; margin-top: 32px; color: var(--text-muted); font-size: 12px; font-family: 'Fraunces', serif; font-style: italic;">
-      ivolina v2 · made with love
+      ivolina v2.1 · made with love
     </div>
   </div>
 </div>
@@ -751,9 +752,11 @@ function renderHome() {
       <div class="feature-card drawing-preview" data-goto="drawing">
         <div class="drawing-preview-img"><img src="${latestDrawing.dataurl}" alt=""></div>
         <div class="drawing-preview-info">
-          <div class="feature-title">latest drawing</div>
-          <div class="drawing-preview-meta">by ${escapeHtml(authorName)} · ${dateStr} · ${time}</div>
-          <div class="feature-sub" style="margin-top: 8px;">tap to open gallery</div>
+          <div style="min-width: 0;">
+            <div class="feature-title">latest drawing</div>
+            <div class="drawing-preview-meta">by ${escapeHtml(authorName)} · ${dateStr} · ${time}</div>
+          </div>
+          <div class="drawing-preview-cta">open gallery ›</div>
         </div>
       </div>
     `;
@@ -1071,8 +1074,33 @@ function pickPreset(i) {
 async function submitQuestion() {
   const text = document.getElementById('askInput').value.trim();
   if (!text) { toast('write a question first'); return; }
-  state.questions.push({ id: 'q_' + Date.now(), text, asker: state.user, answers: {}, created: Date.now() });
-  await dbSet('questions:list', JSON.stringify(state.questions));
+  if (!supabase) return;
+
+  const id = 'q_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6);
+  const { data, error } = await supabase
+    .from('questions')
+    .insert({ id, text, asker: state.user })
+    .select()
+    .single();
+
+  if (error) {
+    console.error('submitQuestion', error);
+    toast('could not send the question');
+    return;
+  }
+
+  // Add locally so it shows instantly; realtime will confirm it.
+  if (!state.questions.some(q => q.id === data.id)) {
+    state.questions.push({
+      id: data.id,
+      text: data.text,
+      asker: data.asker,
+      category: data.category || null,
+      created: new Date(data.created_at).getTime(),
+      answers: {},
+    });
+  }
+
   await addCoins(500);
   closeModal();
   renderQuestions();
@@ -1139,11 +1167,36 @@ function renderQuestionDetail() {
       <button class="btn btn-primary" id="answerSubmit">send answer</button>`;
   }
 
+  // Remember anything half-typed before we rebuild the screen, so an
+  // incoming message from the other phone can't erase your draft.
+  const oldChat = document.getElementById('chatInput');
+  const draftChat = oldChat ? oldChat.value : '';
+  const chatHadFocus = document.activeElement === oldChat;
+  const oldAnswer = document.getElementById('answerInput');
+  const draftAnswer = oldAnswer ? oldAnswer.value : '';
+  const answerHadFocus = document.activeElement === oldAnswer;
+
   document.getElementById('questionDetailContent').innerHTML = content;
   const submit = document.getElementById('answerSubmit');
   if (submit) submit.onclick = () => submitAnswer(q.id);
 
   wireChatHandlers(id);
+
+  // Put the drafts back.
+  const newChat = document.getElementById('chatInput');
+  if (newChat && draftChat) {
+    newChat.value = draftChat;
+    const sendBtn = document.getElementById('chatSendBtn');
+    if (sendBtn) sendBtn.disabled = draftChat.trim().length === 0;
+    newChat.style.height = 'auto';
+    newChat.style.height = Math.min(newChat.scrollHeight, 120) + 'px';
+    if (chatHadFocus) newChat.focus();
+  }
+  const newAnswer = document.getElementById('answerInput');
+  if (newAnswer && draftAnswer) {
+    newAnswer.value = draftAnswer;
+    if (answerHadFocus) newAnswer.focus();
+  }
 }
 
 function renderChatSection(qid) {
@@ -1378,12 +1431,27 @@ async function submitAnswer(id) {
   const text = document.getElementById('answerInput').value.trim();
   if (!text) { toast('write your answer first'); return; }
   const q = state.questions.find(x => x.id === id);
-  if (!q) return;
+  if (!q || !supabase) return;
+
+  // Each person writes ONLY their own row. The unique(question_id, author)
+  // constraint means you two can no longer overwrite each other, even when
+  // answering at the exact same second.
+  const { error } = await supabase
+    .from('answers')
+    .upsert(
+      { question_id: id, author: state.user, body: text },
+      { onConflict: 'question_id,author' }
+    );
+
+  if (error) {
+    console.error('submitAnswer', error);
+    toast('could not send your answer');
+    return;
+  }
+
   q.answers[state.user] = text;
-  await dbSet('questions:list', JSON.stringify(state.questions));
   await addCoins(500);
   toast('+500 coins · answer sent');
-  // re-open to refresh
   openQuestion(id);
 }
 
@@ -1480,9 +1548,22 @@ async function saveDrawing() {
   // Upload to storage; fallback to dataurl on failure (keeps v1 behavior)
   const url = await uploadImage(dataUrl, 'drawings');
   const stored = url || dataUrl;
-  state.drawings.push({ id: 'd_' + Date.now(), author: state.user, dataurl: stored, created: Date.now() });
-  if (state.drawings.length > 20) state.drawings = state.drawings.slice(-20);
-  await dbSet('drawings:list', JSON.stringify(state.drawings));
+  const id = 'd_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6);
+
+  if (supabase) {
+    const { error } = await supabase
+      .from('drawings')
+      .insert({ id, author: state.user, url: stored });
+    if (error) {
+      console.error('saveDrawing', error);
+      toast('could not save the drawing');
+      return;
+    }
+  }
+
+  if (!state.drawings.some(d => d.id === id)) {
+    state.drawings.push({ id, author: state.user, dataurl: stored, created: Date.now() });
+  }
   await addCoins(150);
   toast('+150 coins · saved');
   clearDraw();
@@ -1594,16 +1675,47 @@ function toast(msg) {
   toastTimeout = setTimeout(() => t.classList.remove('show'), 2400);
 }
 
-// ----- REALTIME for kv -----
+// ----- REALTIME -----
 function setupRealtime() {
   if (!supabase) return;
-  supabase.channel('kv-changes')
-    .on('postgres_changes', { event: '*', schema: 'public', table: 'kv' }, () => reloadFromDb())
+  supabase.channel('ivolina-changes')
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'kv' },        () => reloadFromDb())
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'questions' }, () => reloadFromDb())
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'answers' },   () => reloadFromDb())
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'drawings' },  () => reloadFromDb())
     .subscribe();
 }
 
+// True while a text field has focus. Used to make sure a change coming in
+// from the other phone never wipes what you are in the middle of writing.
+function isComposing() {
+  const el = document.activeElement;
+  if (!el) return false;
+  const tag = el.tagName;
+  return tag === 'TEXTAREA' || tag === 'INPUT';
+}
+
+let pendingReload = false;
+
 async function reloadFromDb() {
   if (!state.user) return;
+
+  // Data still gets refreshed in the background — we just don't rebuild the
+  // screen under your fingers. The redraw happens as soon as you're done.
+  if (isComposing()) {
+    if (!pendingReload) {
+      pendingReload = true;
+      const onDone = () => {
+        pendingReload = false;
+        document.removeEventListener('focusout', onDone);
+        setTimeout(() => { if (!isComposing()) reloadFromDb(); }, 150);
+      };
+      document.addEventListener('focusout', onDone);
+    }
+    await loadAllState();
+    return;
+  }
+
   await loadAllState();
   const active = document.querySelector('.screen.active');
   if (!active) return;
@@ -1616,17 +1728,63 @@ async function reloadFromDb() {
 }
 
 async function loadAllState() {
-  const keys = ['profile:ivo', 'profile:nikolina', 'questions:list', 'events:list', 'coins:ivo', 'coins:nikolina', 'drawings:list'];
-  const results = await Promise.all(keys.map(k => dbGet(k)));
-  const [pIvo, pNiki, qs, evs, cIvo, cNiki, drs] = results;
+  // Profiles, events and coins still live in kv — they are per-key and
+  // never written by both of you at the same moment, so they are safe there.
+  const keys = ['profile:ivo', 'profile:nikolina', 'events:list', 'coins:ivo', 'coins:nikolina'];
+  const kvResults = await Promise.all(keys.map(k => dbGet(k)));
+  const [pIvo, pNiki, evs, cIvo, cNiki] = kvResults;
   state.profile.ivo = pIvo ? safeParse(pIvo) : null;
   state.profile.nikolina = pNiki ? safeParse(pNiki) : null;
-  state.questions = qs ? safeParse(qs) || [] : [];
   state.events = evs ? safeParse(evs) || [...MOCK_EVENTS] : [...MOCK_EVENTS];
   if (!evs) await dbSet('events:list', JSON.stringify(state.events));
   state.coins.ivo = cIvo ? parseInt(cIvo) : 0;
   state.coins.nikolina = cNiki ? parseInt(cNiki) : 0;
-  state.drawings = drs ? safeParse(drs) || [] : [];
+
+  // Questions, answers and drawings now come from their own tables.
+  await Promise.all([loadQuestions(), loadDrawings()]);
+}
+
+// Build state.questions in the SAME shape the rest of the app already uses:
+// { id, text, asker, created, answers: { ivo, nikolina } }
+async function loadQuestions() {
+  if (!supabase) return;
+  const [qRes, aRes] = await Promise.all([
+    supabase.from('questions').select('*'),
+    supabase.from('answers').select('*'),
+  ]);
+  if (qRes.error) { console.error('loadQuestions', qRes.error); return; }
+  if (aRes.error) { console.error('loadAnswers', aRes.error); return; }
+
+  const answersByQuestion = {};
+  (aRes.data || []).forEach(a => {
+    if (!answersByQuestion[a.question_id]) answersByQuestion[a.question_id] = {};
+    answersByQuestion[a.question_id][a.author] = a.body;
+  });
+
+  state.questions = (qRes.data || []).map(q => ({
+    id: q.id,
+    text: q.text,
+    asker: q.asker,
+    category: q.category || null,
+    created: new Date(q.created_at).getTime(),
+    answers: answersByQuestion[q.id] || {},
+  }));
+}
+
+async function loadDrawings() {
+  if (!supabase) return;
+  const { data, error } = await supabase
+    .from('drawings')
+    .select('*')
+    .order('created_at', { ascending: false })
+    .limit(60);
+  if (error) { console.error('loadDrawings', error); return; }
+  state.drawings = (data || []).map(d => ({
+    id: d.id,
+    author: d.author,
+    dataurl: d.url,
+    created: new Date(d.created_at).getTime(),
+  }));
 }
 function safeParse(s) { try { return JSON.parse(s); } catch { return null; } }
 
