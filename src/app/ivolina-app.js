@@ -1,5 +1,5 @@
 // ===============================================================
-// IVOLINA v2.2 — question categories + 24h stories
+// IVOLINA v2.2.1 — fixes story upload modal + scroll position memory
 // ===============================================================
 import { createClient } from '@supabase/supabase-js';
 
@@ -291,6 +291,8 @@ const state = {
   drawCtx: null,
   questionPreviewCache: null,
   presetCategory: 'all',
+  scrollPositions: {},
+  catChipsScroll: 0,
   pendingCategory: null,
   stories: [],
   storyIndex: 0,
@@ -736,7 +738,7 @@ const HTML = `
       <div class="settings-row" id="logoutRow"><span class="settings-label" style="color: #ff95a5;">logout</span><span class="settings-value">›</span></div>
     </div>
     <div style="text-align: center; margin-top: 32px; color: var(--text-muted); font-size: 12px; font-family: 'Fraunces', serif; font-style: italic;">
-      ivolina v2.2 · made with love
+      ivolina v2.2.1 · made with love
     </div>
   </div>
 </div>
@@ -766,11 +768,14 @@ function avatarHtml(who, size = 'tiny') {
   return `<span class="${cls} ${classWho}">${initial}</span>`;
 }
 
-function showScreen(name) {
+function showScreen(name, opts = {}) {
+  // Remember where you were on the screen you're leaving.
+  const leaving = document.querySelector('.screen.active');
+  if (leaving) state.scrollPositions[leaving.id] = window.scrollY;
+
   document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
   const t = document.getElementById('screen-' + name);
   if (t) t.classList.add('active');
-  window.scrollTo(0, 0);
   if (name === 'home') renderHome();
   if (name === 'memories') renderMemories();
   if (name === 'questions') renderQuestions();
@@ -787,6 +792,15 @@ function showScreen(name) {
   if (name !== 'questionDetail') {
     stopChatSubscription();
   }
+
+  // Go back to where you were on this screen. Two frames, because the
+  // content has to actually be laid out before the page is tall enough
+  // to scroll to that position.
+  const target = opts.resetScroll ? 0 : (state.scrollPositions['screen-' + name] || 0);
+  requestAnimationFrame(() => {
+    window.scrollTo(0, target);
+    requestAnimationFrame(() => window.scrollTo(0, target));
+  });
 }
 
 function askPassword(who) {
@@ -1237,8 +1251,39 @@ function showPresets(category) {
   `);
 
   document.getElementById('presetBack').onclick = openAskQuestion;
+
+  // The chip row is rebuilt on every category switch, so it would snap back
+  // to the far left. Put it back where it was, then keep tracking it.
+  const chipRow = document.querySelector('.cat-chips');
+  if (chipRow) {
+    const restored = state.catChipsScroll || 0;
+    chipRow.scrollLeft = restored;
+    chipRow.addEventListener('scroll', () => {
+      state.catChipsScroll = chipRow.scrollLeft;
+    }, { passive: true });
+
+    // Only on a first open (nothing remembered yet) do we nudge the active
+    // chip into view. Once there's a remembered position, that wins —
+    // otherwise this would undo the restore on every category switch.
+    if (restored === 0) {
+      const activeChip = chipRow.querySelector('.cat-chip.active');
+      if (activeChip && activeChip.offsetWidth > 0) {
+        const left = activeChip.offsetLeft;
+        const right = left + activeChip.offsetWidth;
+        if (left < chipRow.scrollLeft || right > chipRow.scrollLeft + chipRow.clientWidth) {
+          chipRow.scrollLeft = Math.max(0, left - 16);
+          state.catChipsScroll = chipRow.scrollLeft;
+        }
+      }
+    }
+  }
+
   document.querySelectorAll('[data-cat]').forEach(c => {
-    c.onclick = () => showPresets(c.dataset.cat);
+    c.onclick = () => {
+      const row = document.querySelector('.cat-chips');
+      if (row) state.catChipsScroll = row.scrollLeft;
+      showPresets(c.dataset.cat);
+    };
   });
   document.querySelectorAll('[data-pre]').forEach(e => {
     e.onclick = () => pickPreset(parseInt(e.dataset.pre));
@@ -1304,7 +1349,7 @@ async function openQuestion(id) {
   state.currentQuestionId = id;
   const q = state.questions.find(x => x.id === id);
   if (!q) return;
-  showScreen('questionDetail');
+  showScreen('questionDetail', { resetScroll: true });
   renderQuestionDetail();
   // Load chat if both answered
   const me = state.user;
@@ -1897,15 +1942,32 @@ async function handleStoryFile(e) {
   const f = e.target.files[0];
   e.target.value = '';
   if (!f) return;
-  closeModal();
+
+  // Stay inside the same modal and swap in a loading state, rather than
+  // closing and re-opening (which is fragile and looked broken).
+  showModal(`
+    <div class="modal-handle"></div>
+    <h2>reading photo…</h2>
+    <p>one moment</p>
+    <div style="text-align:center; padding: 12px 0 24px;"><span class="spinner"></span></div>
+  `);
+
   try {
     // 1440px on the long edge keeps the original aspect ratio and stays sharp.
     const dataUrl = await resizeImageToDataUrl(f, 1440, 0.85);
     const dims = await imageDimensions(dataUrl);
     showStoryConfirm(dataUrl, dims);
   } catch (err) {
-    console.error(err);
-    toast('could not read that photo');
+    console.error('handleStoryFile', err);
+    showModal(`
+      <div class="modal-handle"></div>
+      <h2>could not read that photo</h2>
+      <p>try a different one, or take a new picture</p>
+      <button class="btn btn-primary" id="storyRetry">try again</button>
+      <button class="btn btn-ghost" id="storyGiveUp">cancel</button>
+    `);
+    document.getElementById('storyRetry').onclick = openStoryPicker;
+    document.getElementById('storyGiveUp').onclick = closeModal;
   }
 }
 
@@ -2142,8 +2204,16 @@ async function handleSettingsAvatar(e) {
 }
 
 // ----- MODAL / TOAST -----
+// closeModal() clears the content on a 300ms delay so the slide-out
+// animation can finish. If a new modal opens before that timer fires,
+// the old timer would wipe the NEW modal's content and leave you with a
+// blurred, empty overlay. So every open cancels any pending clear.
+let modalClearTimer = null;
+
 function showModal(html) {
   const bd = document.getElementById('modalBackdrop');
+  clearTimeout(modalClearTimer);
+  modalClearTimer = null;
   bd.innerHTML = `<div class="modal">${html}</div>`;
   bd.classList.add('active');
   bd.onclick = (e) => { if (e.target === bd) closeModal(); };
@@ -2151,7 +2221,12 @@ function showModal(html) {
 function closeModal() {
   const bd = document.getElementById('modalBackdrop');
   bd.classList.remove('active');
-  setTimeout(() => { bd.innerHTML = ''; }, 300);
+  clearTimeout(modalClearTimer);
+  modalClearTimer = setTimeout(() => {
+    // Only clear if nothing re-opened in the meantime.
+    if (!bd.classList.contains('active')) bd.innerHTML = '';
+    modalClearTimer = null;
+  }, 300);
 }
 function showConfirm(title, msg, onYes) {
   showModal(`
@@ -2226,12 +2301,20 @@ async function reloadFromDb() {
   await loadAllState();
   const active = document.querySelector('.screen.active');
   if (!active) return;
+
+  // A refresh triggered by the other phone shouldn't move your page.
+  const keepScroll = window.scrollY;
+
   if (active.id === 'screen-home') renderHome();
   if (active.id === 'screen-memories') renderMemories();
   if (active.id === 'screen-questions') renderQuestions();
   if (active.id === 'screen-questionDetail') renderQuestionDetail();
   if (active.id === 'screen-drawing') renderGallery();
   if (active.id === 'screen-settings') renderSettings();
+
+  if (Math.abs(window.scrollY - keepScroll) > 2) {
+    requestAnimationFrame(() => window.scrollTo(0, keepScroll));
+  }
 }
 
 async function loadAllState() {
