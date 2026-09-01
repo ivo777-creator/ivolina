@@ -1,5 +1,5 @@
 // ===============================================================
-// IVOLINA v2.2.3 — swipe to close, video stories, hold-release fix
+// IVOLINA v2.3 — real push notifications
 // ===============================================================
 import { createClient } from '@supabase/supabase-js';
 
@@ -825,13 +825,17 @@ const HTML = `
     </div>
     <div class="settings-section">
       <div class="settings-row" data-goto="memories"><span class="settings-label">manage moments & countdowns</span><span class="settings-value">›</span></div>
+      <div class="settings-row" id="notifyRow">
+        <span class="settings-label">notifications</span>
+        <span class="settings-value" id="notifyValue">—</span>
+      </div>
       <div class="settings-row" id="resetCoinsRow"><span class="settings-label" style="color: var(--text-dim);">reset my coins</span><span class="settings-value">›</span></div>
     </div>
     <div class="settings-section">
       <div class="settings-row" id="logoutRow"><span class="settings-label" style="color: #ff95a5;">logout</span><span class="settings-value">›</span></div>
     </div>
     <div style="text-align: center; margin-top: 32px; color: var(--text-muted); font-size: 12px; font-family: 'Fraunces', serif; font-style: italic;">
-      ivolina v2.2.3 · made with love
+      ivolina v2.3 · made with love
     </div>
   </div>
 </div>
@@ -1431,6 +1435,11 @@ async function submitQuestion() {
   }
 
   state.pendingCategory = null;
+  notifyPartner(
+    `${myName()} asked you something`,
+    text.length > 70 ? text.slice(0, 70) + '…' : text,
+    { tag: 'question' }
+  );
   await addCoins(500);
   closeModal();
   renderQuestions();
@@ -1671,6 +1680,12 @@ async function insertMessage(qid, { kind, body }) {
     toast('could not send message');
     return;
   }
+  notifyPartner(
+    `${myName()} sent you a message`,
+    kind === 'image' ? 'a photo 📷' : (body.length > 60 ? body.slice(0, 60) + '…' : body),
+    { tag: 'chat-' + qid }
+  );
+
   // Optimistic: also append locally (realtime will reconcile)
   if (!state.messagesByQuestion[qid]) state.messagesByQuestion[qid] = [];
   if (!state.messagesByQuestion[qid].some(m => m.id === data.id)) {
@@ -1780,6 +1795,22 @@ async function submitAnswer(id) {
   }
 
   q.answers[state.user] = text;
+
+  const other = state.user === 'ivo' ? 'nikolina' : 'ivo';
+  if (q.answers[other]) {
+    notifyPartner(
+      `${myName()} answered`,
+      'You can both see the answers now 💌',
+      { tag: 'answer-' + id }
+    );
+  } else {
+    notifyPartner(
+      `${myName()} answered a question`,
+      'Answer it yourself to see what they wrote',
+      { tag: 'answer-' + id }
+    );
+  }
+
   await addCoins(500);
   toast('+500 coins · answer sent');
   openQuestion(id);
@@ -1894,6 +1925,7 @@ async function saveDrawing() {
   if (!state.drawings.some(d => d.id === id)) {
     state.drawings.push({ id, author: state.user, dataurl: stored, created: Date.now() });
   }
+  notifyPartner(`${myName()} drew something`, 'take a look ✎', { tag: 'drawing' });
   await addCoins(150);
   toast('+150 coins · saved');
   clearDraw();
@@ -2189,6 +2221,11 @@ async function postStory(previewUrl, dims, meta = { kind: 'image' }) {
     if (error) throw error;
 
     markStorySeen(id);
+    notifyPartner(
+      `${myName()} posted a story`,
+      isVideo ? 'a new video 🎬' : 'a new photo ✨',
+      { tag: 'story' }
+    );
     await loadStories();
     closeModal();
     renderStoryRow();
@@ -2648,6 +2685,14 @@ async function toggleStoryLike(story) {
     if (navigator.vibrate) navigator.vibrate(12);
   }
 
+  if (nowLiked) {
+    notifyPartner(
+      `${myName()} liked your story`,
+      '❤',
+      { to: story.author, tag: 'story-like-' + story.id }
+    );
+  }
+
   const { error } = await supabase.from('stories').update({ liked_by: newValue }).eq('id', story.id);
   if (error) {
     console.error('toggleStoryLike', error);
@@ -2740,6 +2785,217 @@ async function deleteStory(story) {
   });
 }
 
+
+// ===============================================================
+// PUSH NOTIFICATIONS
+// ===============================================================
+const VAPID_PUBLIC_KEY = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY || '';
+
+function urlBase64ToUint8Array(base64String) {
+  const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
+  const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+  const raw = atob(base64);
+  const arr = new Uint8Array(raw.length);
+  for (let i = 0; i < raw.length; i++) arr[i] = raw.charCodeAt(i);
+  return arr;
+}
+
+function pushSupported() {
+  return 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
+}
+
+// On iPhone this only works once the app has been added to the home screen.
+function isStandalone() {
+  return window.navigator.standalone === true
+    || window.matchMedia('(display-mode: standalone)').matches;
+}
+
+async function registerServiceWorker() {
+  if (!('serviceWorker' in navigator)) return null;
+  try {
+    return await navigator.serviceWorker.register('/sw.js');
+  } catch (e) {
+    console.error('service worker registration failed', e);
+    return null;
+  }
+}
+
+// Must be called from a real tap — browsers refuse otherwise.
+async function enableNotifications() {
+  if (!pushSupported()) {
+    toast('this browser cannot do notifications');
+    return false;
+  }
+  if (!VAPID_PUBLIC_KEY) {
+    toast('notifications are not configured yet');
+    return false;
+  }
+
+  const permission = await Notification.requestPermission();
+  if (permission !== 'granted') {
+    toast(permission === 'denied' ? 'notifications are blocked in settings' : 'not enabled');
+    return false;
+  }
+
+  const reg = await registerServiceWorker();
+  if (!reg) { toast('could not set up notifications'); return false; }
+  await navigator.serviceWorker.ready;
+
+  let sub = await reg.pushManager.getSubscription();
+  if (!sub) {
+    try {
+      sub = await reg.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY),
+      });
+    } catch (e) {
+      console.error('subscribe failed', e);
+      toast('could not subscribe this device');
+      return false;
+    }
+  }
+
+  const json = sub.toJSON();
+  const { error } = await supabase.from('push_subscriptions').upsert({
+    endpoint: json.endpoint,
+    user_key: state.user,
+    p256dh: json.keys.p256dh,
+    auth: json.keys.auth,
+    user_agent: navigator.userAgent.slice(0, 200),
+  }, { onConflict: 'endpoint' });
+
+  if (error) {
+    console.error('saving subscription failed', error);
+    toast('could not save this device');
+    return false;
+  }
+
+  lsSet('pushEnabled', '1');
+  toast('notifications are on');
+  renderSettings();
+  return true;
+}
+
+async function disableNotifications() {
+  lsSet('pushEnabled', '');
+  try {
+    const reg = await navigator.serviceWorker.getRegistration();
+    const sub = reg && await reg.pushManager.getSubscription();
+    if (sub) {
+      const endpoint = sub.toJSON().endpoint;
+      await sub.unsubscribe();
+      if (supabase) await supabase.from('push_subscriptions').delete().eq('endpoint', endpoint);
+    }
+  } catch (e) {
+    console.error('unsubscribe failed', e);
+  }
+  toast('notifications are off');
+  renderSettings();
+}
+
+async function notificationStatus() {
+  if (!pushSupported()) return 'unsupported';
+  if (Notification.permission === 'denied') return 'blocked';
+  if (Notification.permission !== 'granted') return 'off';
+  try {
+    const reg = await navigator.serviceWorker.getRegistration();
+    const sub = reg && await reg.pushManager.getSubscription();
+    return sub ? 'on' : 'off';
+  } catch { return 'off'; }
+}
+
+// Fire-and-forget: never let a notification failure break the action itself.
+function notifyPartner(title, message, opts = {}) {
+  const other = state.user === 'ivo' ? 'nikolina' : 'ivo';
+  fetch('/api/push', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      to: opts.to || other,
+      title,
+      message,
+      url: opts.url || '/',
+      tag: opts.tag || 'ivolina',
+    }),
+  }).catch(err => console.warn('notify failed', err));
+}
+
+function myName() {
+  return state.profile[state.user]?.name || (state.user === 'ivo' ? 'Ivo' : 'Nikolina');
+}
+
+
+async function openNotificationSettings() {
+  const st = await notificationStatus();
+
+  if (st === 'unsupported') {
+    showModal(`
+      <div class="modal-handle"></div>
+      <h2>not available here</h2>
+      <p style="text-align:left; line-height:1.6;">
+        This browser can't do notifications. On an iPhone you need iOS 16.4 or newer,
+        and ivolina has to be added to your home screen first.
+      </p>
+      <button class="btn btn-primary" id="nOk">got it</button>
+    `);
+    document.getElementById('nOk').onclick = closeModal;
+    return;
+  }
+
+  if (st === 'blocked') {
+    showModal(`
+      <div class="modal-handle"></div>
+      <h2>blocked</h2>
+      <p style="text-align:left; line-height:1.6;">
+        Notifications were turned off for ivolina in your phone's settings, so the app
+        can't ask again. On iPhone: Settings → Notifications → ivolina → Allow Notifications.
+      </p>
+      <button class="btn btn-primary" id="nOk">got it</button>
+    `);
+    document.getElementById('nOk').onclick = closeModal;
+    return;
+  }
+
+  if (st === 'on') {
+    showModal(`
+      <div class="modal-handle"></div>
+      <h2>notifications are on</h2>
+      <p style="text-align:left; line-height:1.6;">
+        You'll hear about new messages, questions, answers, drawings and stories —
+        plus the days worth celebrating.
+      </p>
+      <button class="btn btn-ghost" id="nTest">send me a test</button>
+      <button class="btn btn-danger" id="nOff">turn off on this phone</button>
+      <button class="btn btn-ghost" id="nCancel">close</button>
+    `);
+    document.getElementById('nTest').onclick = () => {
+      notifyPartner('Test from ivolina', 'If you can read this, it works ✨', { to: state.user, tag: 'test' });
+      toast('test sent — give it a moment');
+    };
+    document.getElementById('nOff').onclick = () => { closeModal(); disableNotifications(); };
+    document.getElementById('nCancel').onclick = closeModal;
+    return;
+  }
+
+  const standalone = isStandalone();
+  showModal(`
+    <div class="modal-handle"></div>
+    <h2>turn on notifications</h2>
+    <p style="text-align:left; line-height:1.6;">
+      Get a notification when ${state.user === 'ivo' ? 'Nikolina' : 'Ivo'} sends a message,
+      asks a question, posts a story — and on the days worth celebrating.
+      ${standalone ? '' : '<br><br><strong>On iPhone this only works once ivolina is on your home screen.</strong> Tap Share, then "Add to Home Screen", and open it from there.'}
+    </p>
+    <button class="btn btn-primary" id="nOn">turn on</button>
+    <button class="btn btn-ghost" id="nCancel">not now</button>
+  `);
+  document.getElementById('nOn').onclick = async () => {
+    const ok = await enableNotifications();
+    if (ok) closeModal();
+  };
+  document.getElementById('nCancel').onclick = closeModal;
+}
+
 // ----- SETTINGS -----
 function renderSettings() {
   const me = state.user;
@@ -2749,6 +3005,18 @@ function renderSettings() {
   else avatarEl.textContent = me === 'ivo' ? 'I' : 'N';
   document.getElementById('settingsNameValue').textContent = p?.name || '—';
   document.getElementById('settingsUserValue').textContent = me === 'ivo' ? 'Ivo (blue)' : 'Nikolina (pink)';
+
+  const nv = document.getElementById('notifyValue');
+  if (nv) {
+    notificationStatus().then(st => {
+      nv.textContent = {
+        on: 'on ›',
+        off: 'off ›',
+        blocked: 'blocked in settings',
+        unsupported: 'not available here',
+      }[st] || '—';
+    });
+  }
 }
 
 function changeName() {
@@ -3001,6 +3269,7 @@ function wireEvents() {
   document.getElementById('settingsAvatarBtn').onclick = () => document.getElementById('settingsAvatarFile').click();
   document.getElementById('settingsAvatarFile').onchange = handleSettingsAvatar;
   document.getElementById('changeNameRow').onclick = changeName;
+  document.getElementById('notifyRow').onclick = openNotificationSettings;
   document.getElementById('resetCoinsRow').onclick = resetCoins;
   document.getElementById('logoutRow').onclick = logout;
 }
@@ -3038,6 +3307,29 @@ export function boot() {
     await loadAllState();
     setupRealtime();
     startCounters();
+
+    // Keep the service worker current, and make sure the saved subscription
+    // still matches this device (they can be rotated by the browser).
+    if (pushSupported() && lsGet('pushEnabled') === '1') {
+      const reg = await registerServiceWorker();
+      if (reg) {
+        try {
+          const sub = await reg.pushManager.getSubscription();
+          if (sub && state.user) {
+            const j = sub.toJSON();
+            await supabase.from('push_subscriptions').upsert({
+              endpoint: j.endpoint,
+              user_key: state.user,
+              p256dh: j.keys.p256dh,
+              auth: j.keys.auth,
+              user_agent: navigator.userAgent.slice(0, 200),
+            }, { onConflict: 'endpoint' });
+          }
+        } catch (e) { console.warn('subscription refresh failed', e); }
+      }
+    } else if (pushSupported()) {
+      registerServiceWorker();
+    }
     const session = lsGet('session');
     if (session && PASSWORDS[session]) {
       state.user = session;
