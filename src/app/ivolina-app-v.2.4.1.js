@@ -1,5 +1,5 @@
 // ===============================================================
-// IVOLINA v2.4 — drawing studio: brushes, colours, stickers, paper
+// IVOLINA v2.4.1 — drawing studio: brushes, colours, stickers, paper, text
 // ===============================================================
 import { createClient } from '@supabase/supabase-js';
 
@@ -675,7 +675,7 @@ video.story-preview-img { width: 100%; max-height: 46vh; }
 
 .editor-canvas-wrap {
   flex: 1; display: flex; align-items: center; justify-content: center;
-  padding: 0 12px; min-height: 0; touch-action: none; position: relative;
+  padding: 4px 12px 8px; min-height: 0; touch-action: none; position: relative;
 }
 #editorCanvas {
   max-width: 100%; max-height: 100%; border-radius: 16px;
@@ -690,9 +690,9 @@ video.story-preview-img { width: 100%; max-height: 46vh; }
 }
 .editor-hint.show { opacity: 1; }
 
-.editor-tools { padding: 10px 14px calc(10px + env(safe-area-inset-bottom)); }
+.editor-tools { padding: 8px 14px calc(30px + env(safe-area-inset-bottom)); }
 
-.tool-row { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 8px; scrollbar-width: none; }
+.tool-row { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 6px; scrollbar-width: none; }
 .tool-row::-webkit-scrollbar { display: none; }
 .tool-chip {
   background: var(--glass); border: 1px solid var(--glass-border);
@@ -702,7 +702,7 @@ video.story-preview-img { width: 100%; max-height: 46vh; }
 }
 .tool-chip.active { background: var(--accent); color: #0A0612; border-color: var(--accent); }
 
-.slider-row { display: flex; align-items: center; gap: 12px; padding: 8px 2px; }
+.slider-row { display: flex; align-items: center; gap: 12px; padding: 5px 2px; }
 .slider-label { font-size: 11px; color: var(--text-muted); width: 46px; flex-shrink: 0; text-transform: uppercase; letter-spacing: 0.06em; }
 
 input.ed-slider {
@@ -728,7 +728,7 @@ input.ed-slider::-moz-range-thumb {
   #00ffff 55%, #0000ff 70%, #ff00ff 85%, #fff 100%); }
 #widthSlider { background: var(--glass); border: 1px solid var(--glass-border); }
 
-.swatch-row { display: flex; gap: 7px; padding: 4px 0 8px; overflow-x: auto; scrollbar-width: none; }
+.swatch-row { display: flex; gap: 7px; padding: 2px 0 6px; overflow-x: auto; scrollbar-width: none; }
 .swatch-row::-webkit-scrollbar { display: none; }
 .swatch {
   width: 30px; height: 30px; border-radius: 50%; flex-shrink: 0;
@@ -962,7 +962,7 @@ const HTML = `
       <div class="settings-row" id="logoutRow"><span class="settings-label" style="color: #ff95a5;">logout</span><span class="settings-value">›</span></div>
     </div>
     <div style="text-align: center; margin-top: 32px; color: var(--text-muted); font-size: 12px; font-family: 'Fraunces', serif; font-style: italic;">
-      ivolina v2.4 · made with love
+      ivolina v2.4.1 · made with love
     </div>
   </div>
 </div>
@@ -3178,6 +3178,8 @@ const editor = {
   font: 'serif',
   textBg: 'none',
   activeText: null,     // index of the text being nudged about
+  rowScroll: {},        // scroll position of each toolbar row
+  sliderPos: 0,
   panel: null,          // 'stickers' | 'background' | null
   onDone: null,
   storyMeta: null,
@@ -3214,12 +3216,17 @@ function openEditor(opts = {}) {
   editor.font = 'serif';
   editor.textBg = 'none';
   editor.activeText = null;
+  editor.sliderPos = editor.mode === 'story' ? 1000 : 0;
   editor.onDone = opts.onDone || null;
   editor.storyMeta = opts.storyMeta || null;
 
+  editor.rowScroll = {};
+
   document.getElementById('editorOverlay').classList.add('active');
-  renderEditorUi();
+  renderEditorShell();     // top bar + canvas: built ONCE
+  renderEditorTools();     // toolbar: rebuilt on every change
   sizeEditorCanvas();
+  attachEditorDrawing();   // handlers on the one canvas that stays
   redrawEditor();
 }
 
@@ -3231,8 +3238,59 @@ function closeEditor() {
   document.getElementById('editorOverlay').classList.remove('active');
 }
 
-function renderEditorUi() {
+// The shell holds the canvas. It is rendered exactly once per session,
+// so tapping a brush can never wipe the drawing again.
+function renderEditorShell() {
   const isStory = editor.mode === 'story';
+  document.getElementById('editorOverlay').innerHTML = `
+    <div class="editor-top">
+      <button class="ed-icon-btn" id="edClose">×</button>
+      <h2>${isStory ? 'decorate' : 'drawing'}</h2>
+      <button class="ed-icon-btn" id="edUndo" title="undo">↶</button>
+      <button class="ed-icon-btn" id="edRedo" title="redo">↷</button>
+      <button class="ed-icon-btn" id="edClear" title="clear">🗑</button>
+      <button class="ed-done-btn" id="edDone">${isStory ? 'next' : 'save'}</button>
+    </div>
+
+    <div class="editor-canvas-wrap" id="edCanvasWrap">
+      <canvas id="editorCanvas"></canvas>
+      <div class="editor-hint" id="edHint"></div>
+    </div>
+
+    <div class="editor-tools" id="edTools"></div>
+  `;
+
+  const $ = (id) => document.getElementById(id);
+  $('edClose').onclick = () => {
+    if (editor.ops.length) showConfirm('discard this?', 'your drawing will be lost.', closeEditor);
+    else closeEditor();
+  };
+  $('edUndo').onclick = undoEditor;
+  $('edRedo').onclick = redoEditor;
+  $('edClear').onclick = () => {
+    if (!editor.ops.length) return;
+    showConfirm('clear everything?', '', () => {
+      editor.redo = editor.ops.slice();
+      editor.ops = [];
+      editor.activeText = null;
+      redrawEditor();
+      updateEditorButtons();
+    });
+  };
+  $('edDone').onclick = finishEditor;
+}
+
+// Only the toolbar. Safe to call as often as you like.
+function renderEditorTools() {
+  const tools = document.getElementById('edTools');
+  if (!tools) return;
+  const isStory = editor.mode === 'story';
+
+  // Remember how far each horizontal row was scrolled before we rebuild it.
+  tools.querySelectorAll('.tool-row').forEach((row, i) => {
+    editor.rowScroll[i] = row.scrollLeft;
+  });
+
   const brushRow = BRUSHES.map(b =>
     `<button class="tool-chip ${editor.tool === b.id ? 'active' : ''}" data-brush="${b.id}">${b.icon} ${b.label}</button>`
   ).join('');
@@ -3249,22 +3307,7 @@ function renderEditorUi() {
     `<div class="bg-swatch ${editor.bg.id === b.id ? 'active' : ''}" data-bg="${b.id}" style="background:${b.css}"></div>`
   ).join('');
 
-  document.getElementById('editorOverlay').innerHTML = `
-    <div class="editor-top">
-      <button class="ed-icon-btn" id="edClose">×</button>
-      <h2>${isStory ? 'decorate' : 'drawing'}</h2>
-      <button class="ed-icon-btn" id="edUndo" title="undo">↶</button>
-      <button class="ed-icon-btn" id="edRedo" title="redo">↷</button>
-      <button class="ed-icon-btn" id="edClear" title="clear">🗑</button>
-      <button class="ed-done-btn" id="edDone">${isStory ? 'next' : 'save'}</button>
-    </div>
-
-    <div class="editor-canvas-wrap" id="edCanvasWrap">
-      <canvas id="editorCanvas"></canvas>
-      <div class="editor-hint" id="edHint"></div>
-    </div>
-
-    <div class="editor-tools">
+  tools.innerHTML = `
       <div class="tool-row">
         ${brushRow}
         <button class="tool-chip ${editor.tool === 'text' ? 'active' : ''}" data-texttool="1">🅣 text</button>
@@ -3274,7 +3317,7 @@ function renderEditorUi() {
 
       <div class="slider-row">
         <span class="slider-label">colour</span>
-        <input type="range" class="ed-slider" id="colorSlider" min="0" max="1000" value="0">
+        <input type="range" class="ed-slider" id="colorSlider" min="0" max="1000" value="${editor.sliderPos || 0}">
         <span class="color-preview" id="colorPreview" style="background:${editor.color}"></span>
       </div>
 
@@ -3284,7 +3327,7 @@ function renderEditorUi() {
         <span class="slider-label">size</span>
         <input type="range" class="ed-slider" id="widthSlider" min="1" max="60" value="${editor.width}">
         <span class="color-preview" id="widthPreview">
-          <span class="width-dot" id="widthDot" style="width:${Math.min(26, editor.width)}px;height:${Math.min(26, editor.width)}px"></span>
+          <span class="width-dot" id="widthDot" style="width:${Math.max(3, Math.min(26, editor.width))}px;height:${Math.max(3, Math.min(26, editor.width))}px"></span>
         </span>
       </div>
 
@@ -3305,34 +3348,23 @@ function renderEditorUi() {
       <div class="panel ${editor.panel === 'background' ? 'open' : ''}" id="bgPanel">
         <div class="bg-grid">${bgSwatches}</div>
       </div>
-    </div>
   `;
+
+  // Put every row back where it was scrolled to.
+  tools.querySelectorAll('.tool-row').forEach((row, i) => {
+    if (editor.rowScroll[i]) row.scrollLeft = editor.rowScroll[i];
+  });
 
   wireEditorUi();
 }
 
+// Kept so older call sites keep working: it now only touches the toolbar.
+function renderEditorUi() {
+  renderEditorTools();
+}
+
 function wireEditorUi() {
   const $ = (id) => document.getElementById(id);
-
-  $('edClose').onclick = () => {
-    if (editor.ops.length) {
-      showConfirm('discard this?', 'your drawing will be lost.', closeEditor);
-    } else {
-      closeEditor();
-    }
-  };
-  $('edUndo').onclick = undoEditor;
-  $('edRedo').onclick = redoEditor;
-  $('edClear').onclick = () => {
-    if (!editor.ops.length) return;
-    showConfirm('clear everything?', '', () => {
-      editor.redo = editor.ops.slice();
-      editor.ops = [];
-      redrawEditor();
-      updateEditorButtons();
-    });
-  };
-  $('edDone').onclick = finishEditor;
 
   document.querySelectorAll('[data-brush]').forEach(b => {
     b.onclick = () => {
@@ -3416,7 +3448,8 @@ function wireEditorUi() {
 
   const cs = $('colorSlider');
   cs.oninput = () => {
-    editor.color = sliderToColor(parseInt(cs.value, 10));
+    editor.sliderPos = parseInt(cs.value, 10);
+    editor.color = sliderToColor(editor.sliderPos);
     if (editor.tool === 'eraser') editor.tool = 'pen';
     editor.sticker = null;
     $('colorPreview').style.background = editor.color;
@@ -3436,7 +3469,6 @@ function wireEditorUi() {
     d.style.height = px + 'px';
   };
 
-  attachEditorDrawing();
   updateEditorButtons();
 }
 
