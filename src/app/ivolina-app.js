@@ -1,5 +1,5 @@
 // ===============================================================
-// IVOLINA v2.2.1 — fixes story upload modal + scroll position memory
+// IVOLINA v2.2.2 — story: hold to pause, pinch to zoom, 7s, likes
 // ===============================================================
 import { createClient } from '@supabase/supabase-js';
 
@@ -556,6 +556,72 @@ textarea.input { resize: none; min-height: 100px; line-height: 1.5; }
 
 .story-preview-img { width: 100%; max-height: 46vh; object-fit: contain; border-radius: 18px; background: #000; margin-bottom: 16px; display: block; }
 
+/* ===== STORY: zoom, pause, likes (v2.2.2) ===== */
+@keyframes floatAround {
+  0%   { transform: translate(0, 0) rotate(-4deg); }
+  25%  { transform: translate(10px, -12px) rotate(3deg); }
+  50%  { transform: translate(-6px, -20px) rotate(-2deg); }
+  75%  { transform: translate(-12px, -8px) rotate(4deg); }
+  100% { transform: translate(0, 0) rotate(-4deg); }
+}
+@keyframes likeBurst {
+  0%   { transform: scale(1); }
+  40%  { transform: scale(1.45); }
+  70%  { transform: scale(0.92); }
+  100% { transform: scale(1); }
+}
+@keyframes heartFloatUp {
+  0%   { opacity: 0; transform: translateY(0) scale(0.6); }
+  20%  { opacity: 1; }
+  100% { opacity: 0; transform: translateY(-120px) scale(1.4); }
+}
+
+.story-stage img {
+  transform-origin: 50% 50%;
+  will-change: transform;
+  touch-action: none;
+}
+.story-stage img.zooming { transition: none; }
+.story-stage img.settling { transition: transform 0.28s cubic-bezier(0.16,1,0.3,1); }
+
+.story-paused-hint {
+  position: absolute; top: 12px; left: 50%; transform: translateX(-50%);
+  background: rgba(0,0,0,0.55); color: rgba(255,255,255,0.85);
+  padding: 5px 12px; border-radius: 100px; font-size: 11px;
+  letter-spacing: 0.06em; text-transform: uppercase;
+  opacity: 0; transition: opacity 0.2s; pointer-events: none;
+}
+.story-paused-hint.show { opacity: 1; }
+
+.story-like-btn {
+  position: absolute; right: 16px; bottom: 16px;
+  width: 52px; height: 52px; border-radius: 50%;
+  background: rgba(0,0,0,0.35); border: 1px solid rgba(255,255,255,0.25);
+  backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+  color: rgba(255,255,255,0.9); font-size: 24px; line-height: 1;
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer; z-index: 5; padding: 0;
+}
+.story-like-btn.liked { color: #ff4d6d; border-color: rgba(255,77,109,0.6); background: rgba(255,77,109,0.16); }
+.story-like-btn.bursting { animation: likeBurst 0.45s cubic-bezier(0.16,1,0.3,1); }
+
+.story-like-fly {
+  position: absolute; right: 30px; bottom: 60px;
+  font-size: 30px; color: #ff4d6d; pointer-events: none; z-index: 6;
+  animation: heartFloatUp 0.9s ease-out forwards;
+}
+
+.story-liked-float {
+  position: absolute; z-index: 5; display: flex; align-items: center; gap: 6px;
+  background: rgba(0,0,0,0.4); border: 1px solid rgba(255,255,255,0.2);
+  backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+  padding: 5px 10px 5px 5px; border-radius: 100px;
+  animation: floatAround 6s ease-in-out infinite;
+  pointer-events: none;
+}
+.story-liked-float .tiny-avatar { width: 26px; height: 26px; font-size: 11px; }
+.story-liked-float .lf-heart { font-size: 14px; color: #ff4d6d; }
+
 /* ===== CHAT ===== */
 .chat-divider { text-align: center; margin: 28px 0 16px; font-family: 'Fraunces', serif; font-style: italic; color: var(--text-muted); font-size: 13px; display: flex; align-items: center; gap: 10px; }
 .chat-divider::before, .chat-divider::after { content: ''; flex: 1; height: 1px; background: var(--glass-border); }
@@ -738,7 +804,7 @@ const HTML = `
       <div class="settings-row" id="logoutRow"><span class="settings-label" style="color: #ff95a5;">logout</span><span class="settings-value">›</span></div>
     </div>
     <div style="text-align: center; margin-top: 32px; color: var(--text-muted); font-size: 12px; font-family: 'Fraunces', serif; font-style: italic;">
-      ivolina v2.2.1 · made with love
+      ivolina v2.2.2 · made with love
     </div>
   </div>
 </div>
@@ -2036,7 +2102,10 @@ async function postStory(dataUrl, dims) {
 
 // ----- viewing stories -----
 let storyTimer = null;
-const STORY_DURATION = 5000;
+let storyStartedAt = 0;      // when the current run of the timer began
+let storyElapsed = 0;        // how much of the 7s is already used up
+let storyPaused = false;
+const STORY_DURATION = 7000; // v2.2.2: 5s -> 7s
 
 function openStoryViewer(who) {
   const list = storiesOf(who);
@@ -2049,6 +2118,51 @@ function openStoryViewer(who) {
   renderStoryFrame();
 }
 
+// ---- timer that can actually be paused ----
+function runStoryTimer() {
+  const remaining = Math.max(0, STORY_DURATION - storyElapsed);
+  storyStartedAt = Date.now();
+  storyPaused = false;
+
+  const bar = document.getElementById('activeBar');
+  if (bar) {
+    const pct = (storyElapsed / STORY_DURATION) * 100;
+    bar.style.transition = 'none';
+    bar.style.width = pct + '%';
+    // Force the browser to apply that before starting the animation.
+    void bar.offsetWidth;
+    bar.style.transition = `width ${remaining}ms linear`;
+    bar.style.width = '100%';
+  }
+
+  clearTimeout(storyTimer);
+  storyTimer = setTimeout(() => stepStory(1), remaining);
+}
+
+function pauseStory() {
+  if (storyPaused) return;
+  storyPaused = true;
+  clearTimeout(storyTimer);
+  storyElapsed += Date.now() - storyStartedAt;
+
+  // Freeze the progress bar exactly where it is.
+  const bar = document.getElementById('activeBar');
+  if (bar) {
+    const frozen = window.getComputedStyle(bar).width;
+    bar.style.transition = 'none';
+    bar.style.width = frozen;
+  }
+  const hint = document.getElementById('storyPausedHint');
+  if (hint) hint.classList.add('show');
+}
+
+function resumeStory() {
+  if (!storyPaused) return;
+  const hint = document.getElementById('storyPausedHint');
+  if (hint) hint.classList.remove('show');
+  runStoryTimer();
+}
+
 function renderStoryFrame() {
   const who = state.storyViewUser;
   const list = storiesOf(who);
@@ -2058,6 +2172,8 @@ function renderStoryFrame() {
 
   markStorySeen(story.id);
 
+  const isMine = who === state.user;
+  const other = state.user === 'ivo' ? 'nikolina' : 'ivo';
   const profile = state.profile[who];
   const name = profile?.name || (who === 'ivo' ? 'Ivo' : 'Nikolina');
   const posted = new Date(story.created_at);
@@ -2075,6 +2191,19 @@ function renderStoryFrame() {
     </div>
   `).join('');
 
+  // On your partner's story: a like button.
+  // On your own story: their avatar drifting about with a heart, if they liked it.
+  const likedByOther = story.liked_by && story.liked_by !== who;
+  const likeUi = isMine
+    ? (likedByOther
+        ? `<div class="story-liked-float" id="storyLikedFloat">
+             ${avatarHtml(story.liked_by, 'tiny')}
+             <span class="lf-heart">❤</span>
+           </div>`
+        : '')
+    : `<button class="story-like-btn ${story.liked_by === state.user ? 'liked' : ''}" id="storyLike"
+         aria-label="like this story">❤</button>`;
+
   document.getElementById('storyViewer').innerHTML = `
     <div class="story-progress">${bars}</div>
     <div class="story-viewer-head">
@@ -2085,57 +2214,282 @@ function renderStoryFrame() {
       </div>
       <button class="story-viewer-close" id="storyClose">×</button>
     </div>
-    <div class="story-stage">
-      <img src="${story.url}" alt="">
-      <div class="story-nav">
+    <div class="story-stage" id="storyStage">
+      <img id="storyImg" src="${story.url}" alt="" draggable="false">
+      <div class="story-paused-hint" id="storyPausedHint">paused</div>
+      <div class="story-nav" id="storyNav">
         <div id="storyPrev"></div>
         <div id="storyNext"></div>
       </div>
+      ${likeUi}
     </div>
     ${story.caption ? `<div class="story-caption">${escapeHtml(story.caption)}</div>` : ''}
     <div class="story-expiry">
       disappears in ${leftH}h ${leftM}m
-      ${who === state.user ? ' · <button class="story-delete" id="storyDelete">delete now</button>' : ''}
+      ${isMine ? ' · <button class="story-delete" id="storyDelete">delete now</button>' : ''}
     </div>
   `;
 
   document.getElementById('storyClose').onclick = closeStoryViewer;
-  document.getElementById('storyPrev').onclick = () => stepStory(-1);
-  document.getElementById('storyNext').onclick = () => stepStory(1);
   const del = document.getElementById('storyDelete');
   if (del) del.onclick = () => deleteStory(story);
 
-  // Animate the active progress bar, then move on.
-  const bar = document.getElementById('activeBar');
-  if (bar) {
-    bar.style.transition = 'none';
-    bar.style.width = '0%';
-    requestAnimationFrame(() => {
-      bar.style.transition = `width ${STORY_DURATION}ms linear`;
-      bar.style.width = '100%';
-    });
+  const likeBtn = document.getElementById('storyLike');
+  if (likeBtn) likeBtn.onclick = (e) => { e.stopPropagation(); toggleStoryLike(story); };
+
+  // Park the floating "they liked it" badge somewhere pleasant and random-ish,
+  // so it isn't always in the same spot.
+  const float = document.getElementById('storyLikedFloat');
+  if (float) {
+    const spots = [
+      { right: '18px', bottom: '22px' },
+      { left: '18px',  bottom: '30px' },
+      { right: '24px', top: '18px' },
+      { left: '22px',  top: '26px' },
+    ];
+    const spot = spots[Math.abs(hashString(story.id)) % spots.length];
+    Object.assign(float.style, spot);
   }
-  clearTimeout(storyTimer);
-  storyTimer = setTimeout(() => stepStory(1), STORY_DURATION);
+
+  setupStoryGestures(story);
+
+  storyElapsed = 0;
+  runStoryTimer();
+}
+
+function hashString(s) {
+  let h = 0;
+  for (let i = 0; i < s.length; i++) h = ((h << 5) - h + s.charCodeAt(i)) | 0;
+  return h;
+}
+
+// ---- hold to pause, pinch to zoom where your fingers are ----
+function setupStoryGestures(story) {
+  const nav = document.getElementById('storyNav');
+  const img = document.getElementById('storyImg');
+  const prevZone = document.getElementById('storyPrev');
+  if (!nav || !img) return;
+
+  const HOLD_MS = 180;        // longer than this counts as a hold, not a tap
+  let holdTimer = null;
+  let didHold = false;
+  let startX = 0, startY = 0;
+  let pinch = null;
+  let scale = 1;
+
+  const dist = (a, b) => Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
+
+  function resetZoom(animate = true) {
+    scale = 1;
+    img.classList.toggle('settling', animate);
+    img.classList.remove('zooming');
+    img.style.transform = 'scale(1)';
+    setTimeout(() => img.classList.remove('settling'), 300);
+  }
+
+  function beginPinch(t0, t1) {
+    clearTimeout(holdTimer);
+    didHold = true;
+    pauseStory();
+
+    // Zoom around the point between the two fingers, expressed as a
+    // percentage of the image box. Fixed at pinch start so it can't jump.
+    const r = img.getBoundingClientRect();
+    const midX = (t0.clientX + t1.clientX) / 2;
+    const midY = (t0.clientY + t1.clientY) / 2;
+    const ox = Math.min(100, Math.max(0, ((midX - r.left) / r.width) * 100));
+    const oy = Math.min(100, Math.max(0, ((midY - r.top) / r.height) * 100));
+    img.style.transformOrigin = `${ox}% ${oy}%`;
+    img.classList.add('zooming');
+    img.classList.remove('settling');
+
+    pinch = { startDist: dist(t0, t1), startScale: scale };
+  }
+
+  nav.addEventListener('touchstart', (e) => {
+    if (e.touches.length === 2) {
+      e.preventDefault();
+      beginPinch(e.touches[0], e.touches[1]);
+      return;
+    }
+    if (e.touches.length === 1) {
+      didHold = false;
+      startX = e.touches[0].clientX;
+      startY = e.touches[0].clientY;
+      clearTimeout(holdTimer);
+      holdTimer = setTimeout(() => { didHold = true; pauseStory(); }, HOLD_MS);
+    }
+  }, { passive: false });
+
+  nav.addEventListener('touchmove', (e) => {
+    if (pinch && e.touches.length === 2) {
+      e.preventDefault();
+      const d = dist(e.touches[0], e.touches[1]);
+      scale = Math.min(4, Math.max(1, pinch.startScale * (d / pinch.startDist)));
+      img.style.transform = `scale(${scale})`;
+      return;
+    }
+    if (e.touches.length === 1 && !didHold) {
+      // A real drag isn't a tap — cancel the pending hold.
+      const dx = Math.abs(e.touches[0].clientX - startX);
+      const dy = Math.abs(e.touches[0].clientY - startY);
+      if (dx > 12 || dy > 12) { clearTimeout(holdTimer); didHold = true; pauseStory(); }
+    }
+  }, { passive: false });
+
+  function endTouch(e) {
+    clearTimeout(holdTimer);
+
+    if (pinch) {
+      // Second finger lifted, or both. Snap back and carry on.
+      if (e.touches.length < 2) {
+        pinch = null;
+        resetZoom(true);
+      }
+      if (e.touches.length === 0) resumeStory();
+      return;
+    }
+
+    if (didHold) {
+      didHold = false;
+      resumeStory();
+      return;
+    }
+
+    // Short tap: left half goes back, right half goes forward.
+    const x = (e.changedTouches && e.changedTouches[0]) ? e.changedTouches[0].clientX : startX;
+    const rect = nav.getBoundingClientRect();
+    stepStory(x - rect.left < rect.width / 2 ? -1 : 1);
+  }
+
+  nav.addEventListener('touchend', endTouch, { passive: true });
+  nav.addEventListener('touchcancel', () => {
+    clearTimeout(holdTimer);
+    pinch = null;
+    resetZoom(false);
+    didHold = false;
+    resumeStory();
+  }, { passive: true });
+
+  // Mouse fallback so it still works on a laptop.
+  let mouseHold = null, mouseHeld = false;
+  nav.addEventListener('mousedown', (e) => {
+    mouseHeld = false;
+    mouseHold = setTimeout(() => { mouseHeld = true; pauseStory(); }, HOLD_MS);
+  });
+  nav.addEventListener('mouseup', (e) => {
+    clearTimeout(mouseHold);
+    if (mouseHeld) { mouseHeld = false; resumeStory(); return; }
+    const rect = nav.getBoundingClientRect();
+    stepStory(e.clientX - rect.left < rect.width / 2 ? -1 : 1);
+  });
+  nav.addEventListener('mouseleave', () => {
+    clearTimeout(mouseHold);
+    if (mouseHeld) { mouseHeld = false; resumeStory(); }
+  });
+}
+
+// ---- likes ----
+async function toggleStoryLike(story) {
+  if (!supabase) return;
+  if (story.author === state.user) return;   // you can't like your own
+
+  const btn = document.getElementById('storyLike');
+  const nowLiked = story.liked_by !== state.user;
+  const newValue = nowLiked ? state.user : null;
+
+  // Update on screen straight away.
+  story.liked_by = newValue;
+  if (btn) {
+    btn.classList.toggle('liked', nowLiked);
+    btn.classList.remove('bursting');
+    void btn.offsetWidth;
+    btn.classList.add('bursting');
+  }
+  if (nowLiked) {
+    const stage = document.getElementById('storyStage');
+    if (stage) {
+      const fly = document.createElement('div');
+      fly.className = 'story-like-fly';
+      fly.textContent = '❤';
+      stage.appendChild(fly);
+      setTimeout(() => fly.remove(), 900);
+    }
+    if (navigator.vibrate) navigator.vibrate(12);
+  }
+
+  const { error } = await supabase.from('stories').update({ liked_by: newValue }).eq('id', story.id);
+  if (error) {
+    console.error('toggleStoryLike', error);
+    story.liked_by = nowLiked ? null : state.user;   // put it back
+    if (btn) btn.classList.toggle('liked', !nowLiked);
+    toast('could not save that like');
+    return;
+  }
+
+  // Keep our copy in state in sync.
+  const inState = state.stories.find(s => s.id === story.id);
+  if (inState) inState.liked_by = newValue;
+}
+
+// Updates just the like bits of the open story, without re-rendering the
+// frame — so the timer keeps running and a pinch in progress isn't lost.
+function refreshStoryLikeUi() {
+  const list = storiesOf(state.storyViewUser);
+  const story = list[state.storyIndex];
+  if (!story) return;
+
+  const isMine = story.author === state.user;
+  const stage = document.getElementById('storyStage');
+  if (!stage) return;
+
+  if (isMine) {
+    const likedBy = story.liked_by && story.liked_by !== story.author ? story.liked_by : null;
+    let float = document.getElementById('storyLikedFloat');
+    if (likedBy && !float) {
+      float = document.createElement('div');
+      float.className = 'story-liked-float';
+      float.id = 'storyLikedFloat';
+      float.innerHTML = `${avatarHtml(likedBy, 'tiny')}<span class="lf-heart">❤</span>`;
+      const spots = [
+        { right: '18px', bottom: '22px' },
+        { left: '18px',  bottom: '30px' },
+        { right: '24px', top: '18px' },
+        { left: '22px',  top: '26px' },
+      ];
+      Object.assign(float.style, spots[Math.abs(hashString(story.id)) % spots.length]);
+      stage.appendChild(float);
+      if (navigator.vibrate) navigator.vibrate(12);
+    } else if (!likedBy && float) {
+      float.remove();
+    }
+  } else {
+    const btn = document.getElementById('storyLike');
+    if (btn) btn.classList.toggle('liked', story.liked_by === state.user);
+  }
 }
 
 function stepStory(dir) {
   clearTimeout(storyTimer);
   const list = storiesOf(state.storyViewUser);
   const next = state.storyIndex + dir;
-  if (next < 0) { state.storyIndex = 0; renderStoryFrame(); return; }
+  if (next < 0) { state.storyIndex = 0; storyElapsed = 0; renderStoryFrame(); return; }
   if (next >= list.length) { closeStoryViewer(); return; }
   state.storyIndex = next;
+  storyElapsed = 0;
   renderStoryFrame();
 }
 
 function closeStoryViewer() {
   clearTimeout(storyTimer);
+  storyPaused = false;
+  storyElapsed = 0;
   const v = document.getElementById('storyViewer');
   v.classList.remove('active');
   v.innerHTML = '';
   renderStoryRow();
 }
+
 
 async function deleteStory(story) {
   clearTimeout(storyTimer);
@@ -2278,9 +2632,13 @@ async function reloadFromDb() {
 
   // Data still gets refreshed in the background — we just don't rebuild the
   // screen under your fingers. The redraw happens as soon as you're done.
-  // Don't disturb a story that's currently being watched.
+  // Don't rebuild a story that's currently being watched — but do let a
+  // like land, so you see her heart appear on your own story right away.
   if (document.getElementById('storyViewer')?.classList.contains('active')) {
+    const before = state.stories.map(s => s.id + ':' + (s.liked_by || '')).join('|');
     await loadAllState();
+    const after = state.stories.map(s => s.id + ':' + (s.liked_by || '')).join('|');
+    if (before !== after) refreshStoryLikeUi();
     return;
   }
 
