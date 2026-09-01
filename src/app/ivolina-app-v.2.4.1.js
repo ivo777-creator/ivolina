@@ -13,7 +13,7 @@ if (SUPABASE_URL && SUPABASE_KEY) {
   });
 }
 
-const RELATIONSHIP_START = new Date('2026-08-27T00:00:00');
+const RELATIONSHIP_START = new Date('2026-05-08T00:00:00');
 
 const QUESTION_CATEGORIES = [
   { id: 'all',        label: 'all',        emoji: '\u2726' },
