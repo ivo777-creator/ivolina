@@ -1,5 +1,5 @@
 // ===============================================================
-// IVOLINA v2.7 — card-to-screen morph, rolling numbers, richer aurora
+// IVOLINA v2.8 — private vault, story keeping, swipe-back rebuilt
 // ===============================================================
 import { createClient } from '@supabase/supabase-js';
 
@@ -997,8 +997,13 @@ input.ed-slider::-moz-range-thumb {
 @keyframes tick { 0% { opacity: 0.35; transform: translateY(-2px); } 100% { opacity: 1; transform: none; } }
 .counter-num.ticked { animation: tick 0.28s cubic-bezier(0.22, 1, 0.36, 1); }
 
-/* 3. Swipe back: the screen follows your thumb. */
-.screen.dragging { animation: none; transition: none; }
+/* 3. Swipe back: the screen follows your thumb, and the one you are
+   going back to waits behind it instead of leaving bare background. */
+.screen.dragging { animation: none; transition: none; position: relative; z-index: 2; }
+.screen.peeking {
+  display: block; position: fixed; inset: 0; z-index: 1;
+  animation: none; overflow: hidden; pointer-events: none;
+}
 .swipe-hint {
   position: fixed; left: 0; top: 0; bottom: 0; width: 22px; z-index: 5;
 }
@@ -1098,6 +1103,58 @@ html[data-theme="light"] .top-blur {
 @media (prefers-reduced-motion: reduce) {
   .roll-in, .roll-out { animation: none; }
   .roll-out { display: none; }
+}
+
+/* ===== the vault ===== */
+.vault-head-note { font-size: 12px; color: var(--text-muted); margin-bottom: 14px; line-height: 1.5; }
+.vault-meta { font-size: 12px; color: var(--text-muted); margin-bottom: 12px; }
+.vault-meta-warn { color: #ffb27a; }
+.vault-add {
+  width: 100%; border: 1px dashed var(--glass-border); background: var(--card);
+  color: var(--text); border-radius: var(--r-card); padding: 16px; font-size: 15px;
+  font-weight: 600; font-family: inherit; cursor: pointer; margin-bottom: 16px;
+  letter-spacing: -0.01em;
+}
+.vault-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+.vault-tile {
+  aspect-ratio: 1; border-radius: 10px; overflow: hidden; position: relative;
+  background: var(--hairline); cursor: pointer;
+  transition: transform 0.2s var(--ease-spring);
+}
+.vault-tile:active { transform: scale(0.95); }
+.vault-tile img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.vault-badge {
+  position: absolute; right: 6px; bottom: 6px; font-size: 10px; color: #fff;
+  background: rgba(0,0,0,0.55); border-radius: 100px; padding: 2px 7px;
+}
+.vault-origin {
+  position: absolute; left: 6px; top: 6px; font-size: 9px; color: #fff;
+  background: rgba(0,0,0,0.45); border-radius: 100px; padding: 2px 7px;
+  letter-spacing: 0.04em;
+}
+.vault-preview {
+  width: 100%; max-height: 52vh; border-radius: 14px; overflow: hidden;
+  background: #000; margin-bottom: 14px; display: flex; align-items: center; justify-content: center;
+}
+.vault-preview img, .vault-preview video { max-width: 100%; max-height: 52vh; display: block; }
+.vault-progress {
+  position: fixed; left: 50%; bottom: calc(env(safe-area-inset-bottom) + 24px);
+  transform: translateX(-50%) translateY(20px);
+  background: var(--bg-2); border: 0.5px solid var(--glass-border);
+  padding: 10px 18px; border-radius: var(--r-pill); font-size: 13px;
+  z-index: 550; opacity: 0; visibility: hidden;
+  transition: opacity 0.25s, transform 0.25s var(--ease), visibility 0s linear 0.25s;
+}
+.vault-progress.show { opacity: 1; visibility: visible; transform: translateX(-50%) translateY(0); transition-delay: 0s; }
+
+.story-keep-btn {
+  position: absolute; right: 16px; bottom: 78px;
+  width: 52px; height: 52px; border-radius: 50%;
+  background: rgba(0,0,0,0.35); border: 1px solid rgba(255,255,255,0.25);
+  backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+  color: rgba(255,255,255,0.9); font-size: 19px;
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer; z-index: 5; padding: 0;
 }
 
 /* ===== CHAT ===== */
@@ -1270,6 +1327,23 @@ const HTML = `
   </div>
 </div>
 
+<div id="screen-vault" class="screen">
+  <div class="app-header">
+    <div class="back-btn" data-goto="home">‹</div>
+    <h1>kept</h1>
+    <button class="add-btn" id="vaultAddBtn">+ add</button>
+  </div>
+  <div class="app-content">
+    <div class="vault-head-note">
+      Originals, exactly as they were. Nobody sees these unless they have your Supabase.
+    </div>
+    <div class="vault-meta" id="vaultMeta"></div>
+    <input type="file" id="vaultFile" accept="image/*,video/*" multiple style="display:none;">
+    <button class="vault-add" id="vaultAdd">＋  add photos or videos</button>
+    <div class="vault-grid" id="vaultGrid"></div>
+  </div>
+</div>
+
 <div id="screen-settings" class="screen">
   <div class="app-header">
     <div class="back-btn" data-goto="home">‹</div>
@@ -1309,7 +1383,7 @@ const HTML = `
       <div class="settings-row" id="logoutRow"><span class="settings-label" style="color: #ff95a5;">logout</span><span class="settings-value">›</span></div>
     </div>
     <div style="text-align: center; margin-top: 32px; color: var(--text-muted); font-size: 12px; font-weight: 400;">
-      ivolina v2.7 · made with love
+      ivolina v2.8 · made with love
     </div>
   </div>
 </div>
@@ -1320,6 +1394,7 @@ const HTML = `
 <div class="lock-screen" id="lockScreen"></div>
 <div class="top-blur"></div>
 <div class="toast" id="toast"></div>
+<div class="vault-progress" id="vaultProgress"></div>
 `;
 
 // ===============================================================
@@ -1411,7 +1486,8 @@ function showScreen(name, opts = {}) {
   });
   const t = document.getElementById('screen-' + name);
   if (t) {
-    if (opts.back) t.classList.add('from-back');
+    // A swipe has already moved it into place; animating again would jolt.
+    if (opts.back && !opts.silent) t.classList.add('from-back');
     else if (opts.morphed) t.classList.add('morphed');
     t.classList.add('active');
   }
@@ -1420,6 +1496,7 @@ function showScreen(name, opts = {}) {
   if (name === 'questions') renderQuestions();
   if (name === 'drawing') initDrawing();
   if (name === 'settings') renderSettings();
+  if (name === 'vault') renderVault();
   if (name === 'setup') {
     const d = document.getElementById('setupAvatarDisplay');
     d.textContent = state.user === 'ivo' ? 'I' : 'N';
@@ -1699,7 +1776,15 @@ function showAboutMore() {
     </p>
     <button class="btn btn-primary" id="aboutOk">got it</button>
   `);
-  document.getElementById('aboutOk').onclick = closeModal;
+  const ok = document.getElementById('aboutOk');
+  ok.onclick = closeModal;
+
+  // Three quick taps on the heading opens the vault.
+  const heading = document.querySelector('#modalBackdrop h2');
+  if (heading) {
+    heading.style.cursor = 'default';
+    heading.onclick = () => { if (registerVaultTap()) openVault(); };
+  }
 }
 
 async function dailyCheckin() {
@@ -2543,23 +2628,44 @@ const BACK_TARGETS = {
 };
 
 function startEdgeSwipe() {
-  let tracking = false;
+  let tracking = false;      // finger is down at the edge
+  let engaged = false;       // we've decided this really is a back-swipe
   let startX = 0, startY = 0, dx = 0;
   let screen = null;
+  let beneath = null;
+
+  const cleanUp = () => {
+    if (screen) {
+      screen.classList.remove('dragging');
+      screen.style.transition = '';
+      screen.style.transform = '';
+      screen.style.boxShadow = '';
+    }
+    if (beneath) {
+      beneath.classList.remove('peeking');
+      beneath.style.transition = '';
+      beneath.style.transform = '';
+      beneath.style.opacity = '';
+    }
+    screen = null; beneath = null;
+    tracking = false; engaged = false; dx = 0;
+  };
 
   document.addEventListener('touchstart', (e) => {
     if (e.touches.length !== 1) return;
-    // Only from the very left edge, and never over the editor or a story.
-    if (e.touches[0].clientX > 24) return;
+    if (e.touches[0].clientX > 30) return;
     if (document.getElementById('storyViewer')?.classList.contains('active')) return;
     if (document.getElementById('editorOverlay')?.classList.contains('active')) return;
     if (document.getElementById('lockScreen')?.classList.contains('active')) return;
     if (document.getElementById('modalBackdrop')?.classList.contains('active')) return;
+    if (morphing) return;
 
-    screen = document.querySelector('.screen.active');
-    if (!screen || !BACK_TARGETS[screen.id]) return;
+    const current = document.querySelector('.screen.active');
+    if (!current || !BACK_TARGETS[current.id]) return;
 
+    screen = current;
     tracking = true;
+    engaged = false;
     startX = e.touches[0].clientX;
     startY = e.touches[0].clientY;
     dx = 0;
@@ -2567,37 +2673,82 @@ function startEdgeSwipe() {
 
   document.addEventListener('touchmove', (e) => {
     if (!tracking || !screen) return;
-    dx = e.touches[0].clientX - startX;
-    const dy = Math.abs(e.touches[0].clientY - startY);
-    if (dx < 0 || dy > Math.abs(dx)) return;   // going up or down, not back
-    screen.classList.add('dragging');
+    const x = e.touches[0].clientX;
+    const y = e.touches[0].clientY;
+    dx = x - startX;
+    const dy = y - startY;
+
+    if (!engaged) {
+      // Wait until the direction is clear. Mostly-vertical means they
+      // are scrolling, so let go and never fight the page.
+      if (Math.abs(dy) > Math.abs(dx)) { tracking = false; return; }
+      if (dx < 12) return;
+      engaged = true;
+
+      // Bring the screen we're going back to up behind this one, so
+      // there is something to reveal rather than bare background.
+      const targetName = BACK_TARGETS[screen.id];
+      beneath = document.getElementById('screen-' + targetName);
+      if (beneath) {
+        beneath.classList.add('peeking');
+        beneath.style.transform = 'translateX(-22%)';
+        beneath.style.opacity = '0.55';
+      }
+      screen.classList.add('dragging');
+      screen.style.boxShadow = '-14px 0 40px rgba(0,0,0,0.4)';
+    }
+
+    if (dx < 0) dx = 0;
+    e.preventDefault();
+
+    const progress = Math.min(1, dx / window.innerWidth);
     screen.style.transform = `translateX(${dx}px)`;
-    screen.style.opacity = String(Math.max(0.45, 1 - dx / (window.innerWidth * 1.2)));
-  }, { passive: true });
+    if (beneath) {
+      beneath.style.transform = `translateX(${-22 + 22 * progress}%)`;
+      beneath.style.opacity = String(0.55 + 0.45 * progress);
+    }
+  }, { passive: false });
 
   const finish = () => {
-    if (!tracking || !screen) return;
-    tracking = false;
+    if (!tracking && !engaged) { cleanUp(); return; }
+    if (!screen) { cleanUp(); return; }
+    if (!engaged) { cleanUp(); return; }
+
     const target = BACK_TARGETS[screen.id];
     const committed = dx > window.innerWidth / 3;
+    const ease = 'transform 0.28s cubic-bezier(0.22,1,0.36,1), opacity 0.28s';
 
-    screen.style.transition = 'transform 0.26s cubic-bezier(0.22,1,0.36,1), opacity 0.26s';
-    screen.style.transform = committed ? `translateX(${window.innerWidth}px)` : '';
-    screen.style.opacity = committed ? '0' : '';
+    screen.style.transition = ease;
+    screen.style.transform = committed ? `translateX(${window.innerWidth}px)` : 'translateX(0px)';
+    if (beneath) {
+      beneath.style.transition = ease;
+      beneath.style.transform = committed ? 'translateX(0%)' : 'translateX(-22%)';
+      beneath.style.opacity = committed ? '1' : '0.55';
+    }
 
-    const done = screen;
+    const leaving = screen;
+    const arriving = beneath;
+    const goBack = committed;
+    screen = null; beneath = null;
+    tracking = false; engaged = false;
+
     setTimeout(() => {
-      done.classList.remove('dragging');
-      done.style.transition = '';
-      done.style.transform = '';
-      done.style.opacity = '';
-      if (committed && target) showScreen(target, { back: true });
-    }, committed ? 230 : 260);
-    screen = null;
+      leaving.classList.remove('dragging');
+      leaving.style.transition = '';
+      leaving.style.transform = '';
+      leaving.style.boxShadow = '';
+      if (arriving) {
+        arriving.classList.remove('peeking');
+        arriving.style.transition = '';
+        arriving.style.transform = '';
+        arriving.style.opacity = '';
+      }
+      if (goBack && target) showScreen(target, { back: true, silent: true });
+    }, 290);
   };
 
   document.addEventListener('touchend', finish, { passive: true });
-  document.addEventListener('touchcancel', finish, { passive: true });
+  document.addEventListener('touchcancel', () => cleanUp(), { passive: true });
 }
 
 // ----- DRAWING -----
@@ -3245,6 +3396,7 @@ function renderStoryFrame() {
         <div id="storyNext"></div>
       </div>
       ${likeUi}
+      <button class="story-keep-btn" id="storyKeep" aria-label="keep this">⤓</button>
     </div>
     ${story.caption ? `<div class="story-caption">${escapeHtml(story.caption)}</div>` : ''}
     ${isMine ? '<div class="story-expiry"><button class="story-delete" id="storyDelete">delete now</button></div>' : ''}
@@ -3256,6 +3408,13 @@ function renderStoryFrame() {
 
   const likeBtn = document.getElementById('storyLike');
   if (likeBtn) likeBtn.onclick = (e) => { e.stopPropagation(); toggleStoryLike(story); };
+
+  const keepBtn = document.getElementById('storyKeep');
+  if (keepBtn) keepBtn.onclick = (e) => {
+    e.stopPropagation();
+    pauseStory();
+    keepStoryInVault(story);
+  };
 
   const vid = document.getElementById('storyVideo');
   if (vid) {
@@ -5175,9 +5334,18 @@ function openThemeSettings() {
 // Shown once after an update, then never again until the next one.
 // Add the newest release at the top; older entries can stay.
 // ===============================================================
-const APP_VERSION = '2.7';
+const APP_VERSION = '2.8';
 
 const RELEASE_NOTES = {
+  '2.8': {
+    title: 'Somewhere to keep things',
+    lines: [
+      'A private place for photos and videos — originals, untouched',
+      'Save anything back to your phone in the quality you put in',
+      'Keep a story before its 24 hours are up',
+      'Swiping back now shows the screen you are returning to',
+    ],
+  },
   '2.7': {
     title: 'It moves now',
     lines: [
@@ -5248,6 +5416,365 @@ function showReleaseNotesIfNew() {
   };
   return true;
 }
+
+
+// ===============================================================
+// THE VAULT (v2.8)
+//
+// A private place for photos and videos. Reached by tapping
+// "still to come" three times quickly — not a secret, just out of
+// the way.
+//
+// Two things make it different from the rest of the app:
+//  * the bucket is private, so files have no public address; the
+//    app asks for a signed link each time and that link expires
+//  * originals are stored untouched, so what you take out is
+//    exactly what you put in
+// ===============================================================
+const VAULT_BUCKET = 'vault';
+const SIGNED_URL_TTL = 60 * 60;          // an hour is plenty for one session
+const VAULT_WARN_BYTES = 700 * 1024 * 1024;  // Supabase's free tier gives 1 GB
+
+const vault = {
+  items: [],
+  loaded: false,
+  signed: new Map(),   // path -> { url, expires }
+  selected: null,
+};
+
+async function loadVault() {
+  if (!supabase) return;
+  const { data, error } = await supabase
+    .from('vault_items')
+    .select('*')
+    .order('created_at', { ascending: false });
+  if (error) { console.error('loadVault', error); return; }
+  vault.items = data || [];
+  vault.loaded = true;
+}
+
+// Signed links are cached until shortly before they lapse, so scrolling
+// the gallery doesn't ask for a new one on every thumbnail.
+async function signedUrl(path) {
+  if (!supabase || !path) return null;
+  const cached = vault.signed.get(path);
+  if (cached && cached.expires > Date.now() + 60000) return cached.url;
+
+  const { data, error } = await supabase.storage
+    .from(VAULT_BUCKET)
+    .createSignedUrl(path, SIGNED_URL_TTL);
+  if (error || !data) { console.error('signedUrl', error); return null; }
+
+  vault.signed.set(path, { url: data.signedUrl, expires: Date.now() + SIGNED_URL_TTL * 1000 });
+  return data.signedUrl;
+}
+
+function vaultTotalBytes() {
+  return vault.items.reduce((sum, i) => sum + (i.size_bytes || 0), 0);
+}
+
+function formatBytes(n) {
+  if (!n) return '0 MB';
+  if (n < 1024 * 1024) return Math.round(n / 1024) + ' KB';
+  if (n < 1024 * 1024 * 1024) return (n / 1048576).toFixed(1) + ' MB';
+  return (n / 1073741824).toFixed(2) + ' GB';
+}
+
+// ---------------------------------------------------------------
+// Getting in: three taps on "still to come" inside a second.
+// ---------------------------------------------------------------
+let vaultTaps = [];
+
+function registerVaultTap() {
+  const now = Date.now();
+  vaultTaps = vaultTaps.filter(t => now - t < 1000);
+  vaultTaps.push(now);
+  if (vaultTaps.length >= 3) {
+    vaultTaps = [];
+    return true;
+  }
+  return false;
+}
+
+async function openVault() {
+  // If the app is locked at all, the vault asks again.
+  if (lockEnabled()) {
+    const ok = await confirmIdentityForVault();
+    if (!ok) return;
+  }
+  closeModal();
+  if (!vault.loaded) await loadVault();
+  showScreen('vault');
+}
+
+function confirmIdentityForVault() {
+  return new Promise((resolve) => {
+    const hasPasskey = !!lsGet('lock:credId');
+    showModal(`
+      <div class="modal-handle"></div>
+      <h2>just checking</h2>
+      <p>this one is private</p>
+      ${hasPasskey ? '<button class="btn btn-primary" id="vaultFace">Face ID</button>' : ''}
+      <input type="password" inputmode="numeric" pattern="[0-9]*" id="vaultPin" class="input" placeholder="PIN" maxlength="6">
+      <button class="btn btn-ghost" id="vaultPinGo">unlock</button>
+      <button class="btn btn-ghost" id="vaultCancel">cancel</button>
+    `);
+
+    const done = (v) => { resolve(v); };
+    const face = document.getElementById('vaultFace');
+    if (face) face.onclick = async () => {
+      try {
+        if (await verifyPasskey()) { markUnlocked(); done(true); }
+        else toast('that did not work');
+      } catch { toast('use your PIN instead'); }
+    };
+    document.getElementById('vaultPinGo').onclick = async () => {
+      const pin = document.getElementById('vaultPin').value.trim();
+      const salt = lsGet('lock:pinSalt') || '';
+      if (pin && await hashPin(pin, salt) === lsGet('lock:pinHash')) { markUnlocked(); done(true); }
+      else toast('wrong PIN');
+    };
+    document.getElementById('vaultCancel').onclick = () => { closeModal(); done(false); };
+  });
+}
+
+// ---------------------------------------------------------------
+// The gallery
+// ---------------------------------------------------------------
+function renderVault() {
+  const grid = document.getElementById('vaultGrid');
+  const meta = document.getElementById('vaultMeta');
+  if (!grid) return;
+
+  const total = vaultTotalBytes();
+  if (meta) {
+    meta.textContent = vault.items.length
+      ? `${vault.items.length} ${vault.items.length === 1 ? 'item' : 'items'} · ${formatBytes(total)}`
+      : '';
+    meta.classList.toggle('vault-meta-warn', total > VAULT_WARN_BYTES);
+  }
+
+  if (!vault.items.length) {
+    grid.innerHTML = `<div class="empty" style="grid-column: 1/-1;">
+      <div class="empty-icon">✦</div>
+      <div class="empty-text">nothing kept here yet</div>
+    </div>`;
+    return;
+  }
+
+  grid.innerHTML = vault.items.map(item => `
+    <div class="vault-tile" data-vault="${item.id}">
+      <img data-thumb="${escapeHtml(item.thumb_path || item.path)}" alt="">
+      ${item.kind === 'video' ? '<span class="vault-badge">▶</span>' : ''}
+      ${item.source === 'story' ? '<span class="vault-origin">story</span>' : ''}
+    </div>
+  `).join('');
+
+  grid.querySelectorAll('[data-vault]').forEach(el => {
+    el.onclick = () => openVaultItem(el.dataset.vault);
+  });
+
+  // Fill the thumbnails in as their links come back.
+  grid.querySelectorAll('[data-thumb]').forEach(async (img) => {
+    const url = await signedUrl(img.dataset.thumb);
+    if (url) img.src = url;
+  });
+}
+
+async function openVaultItem(id) {
+  const item = vault.items.find(i => i.id === id);
+  if (!item) return;
+  vault.selected = item;
+
+  const url = await signedUrl(item.path);
+  const when = new Date(item.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+  const who = state.profile[item.owner]?.name || item.owner;
+
+  showModal(`
+    <div class="modal-handle"></div>
+    <div class="vault-preview">
+      ${item.kind === 'video'
+        ? `<video src="${url}" controls playsinline preload="metadata"></video>`
+        : `<img src="${url}" alt="">`}
+    </div>
+    <p style="margin-bottom:16px;">${escapeHtml(who)} · ${when} · ${formatBytes(item.size_bytes)}${item.width ? ` · ${item.width}×${item.height}` : ''}</p>
+    <button class="btn btn-primary" id="vaultSave">save to my phone</button>
+    <button class="btn btn-danger" id="vaultDelete">delete from the vault</button>
+    <button class="btn btn-ghost" id="vaultClose">close</button>
+  `);
+
+  document.getElementById('vaultSave').onclick = () => saveVaultItemToPhone(item);
+  document.getElementById('vaultDelete').onclick = () => deleteVaultItem(item);
+  document.getElementById('vaultClose').onclick = closeModal;
+}
+
+// On an iPhone the share sheet is the reliable way into Photos.
+// A plain download link is the fallback everywhere else.
+async function saveVaultItemToPhone(item) {
+  const btn = document.getElementById('vaultSave');
+  if (btn) { btn.disabled = true; btn.textContent = 'preparing…'; }
+  try {
+    const url = await signedUrl(item.path);
+    const res = await fetch(url);
+    const blob = await res.blob();
+    const name = item.file_name || `ivolina-${item.id}.${(item.mime || 'image/jpeg').split('/')[1]}`;
+    const file = new File([blob], name, { type: item.mime || blob.type });
+
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      await navigator.share({ files: [file] });
+      if (btn) { btn.disabled = false; btn.textContent = 'save to my phone'; }
+      return;
+    }
+
+    const objectUrl = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = objectUrl;
+    a.download = name;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(objectUrl), 4000);
+    toast('saved');
+  } catch (e) {
+    if (e && e.name === 'AbortError') {
+      // They closed the share sheet. Nothing went wrong.
+    } else {
+      console.error('saveVaultItemToPhone', e);
+      toast('could not prepare the file');
+    }
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = 'save to my phone'; }
+  }
+}
+
+function deleteVaultItem(item) {
+  showConfirm('delete this?', 'it is removed for good, for both of you.', async () => {
+    if (!supabase) return;
+    const paths = [item.path];
+    if (item.thumb_path && item.thumb_path !== item.path) paths.push(item.thumb_path);
+    await supabase.storage.from(VAULT_BUCKET).remove(paths);
+    await supabase.from('vault_items').delete().eq('id', item.id);
+    vault.items = vault.items.filter(i => i.id !== item.id);
+    paths.forEach(p => vault.signed.delete(p));
+    closeModal();
+    renderVault();
+    toast('deleted');
+  });
+}
+
+// ---------------------------------------------------------------
+// Putting things in — originals, untouched
+// ---------------------------------------------------------------
+async function handleVaultUpload(e) {
+  const files = [...(e.target.files || [])];
+  e.target.value = '';
+  if (!files.length) return;
+
+  const bar = document.getElementById('vaultProgress');
+  let done = 0;
+  const show = (msg) => { if (bar) { bar.textContent = msg; bar.classList.add('show'); } };
+  show(`0 / ${files.length}`);
+
+  for (const file of files) {
+    try {
+      await addToVault(file, 'upload');
+    } catch (err) {
+      console.error('vault upload', err);
+      toast(`could not add ${file.name}`);
+    }
+    done++;
+    show(`${done} / ${files.length}`);
+  }
+
+  if (bar) setTimeout(() => bar.classList.remove('show'), 1200);
+  await loadVault();
+  renderVault();
+  toast(files.length === 1 ? 'kept' : `${files.length} kept`);
+}
+
+async function addToVault(file, source = 'upload', extra = {}) {
+  if (!supabase) return null;
+
+  const isVideo = (file.type || '').startsWith('video/');
+  const id = 'v_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6);
+  const ext = (file.name && file.name.includes('.'))
+    ? file.name.split('.').pop().toLowerCase()
+    : ((file.type || 'image/jpeg').split('/')[1] || 'jpg');
+  const path = `originals/${id}.${ext}`;
+
+  // The original goes up exactly as it is — no resizing, no re-encoding.
+  const { error: upErr } = await supabase.storage
+    .from(VAULT_BUCKET)
+    .upload(path, file, { contentType: file.type || undefined, upsert: false });
+  if (upErr) throw upErr;
+
+  // A small preview so the gallery doesn't have to load originals.
+  let thumbPath = null;
+  let dims = { width: extra.width || null, height: extra.height || null };
+  if (!isVideo) {
+    try {
+      const thumbUrl = await resizeImageToDataUrl(file, 500, 0.72);
+      const d = await imageDimensions(thumbUrl);
+      const full = await imageDimensions(await fileToDataUrl(file));
+      dims = { width: full.width, height: full.height };
+      const thumbBlob = await (await fetch(thumbUrl)).blob();
+      thumbPath = `thumbs/${id}.jpg`;
+      await supabase.storage.from(VAULT_BUCKET)
+        .upload(thumbPath, thumbBlob, { contentType: 'image/jpeg', upsert: false });
+    } catch (e) {
+      console.warn('thumbnail failed, using the original', e);
+      thumbPath = null;
+    }
+  }
+
+  const { error } = await supabase.from('vault_items').insert({
+    id,
+    owner: state.user,
+    path,
+    thumb_path: thumbPath,
+    kind: isVideo ? 'video' : 'image',
+    file_name: file.name || null,
+    mime: file.type || null,
+    size_bytes: file.size || null,
+    width: dims.width,
+    height: dims.height,
+    source,
+  });
+  if (error) throw error;
+  return id;
+}
+
+function fileToDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => resolve(r.result);
+    r.onerror = reject;
+    r.readAsDataURL(file);
+  });
+}
+
+// ---------------------------------------------------------------
+// Keeping a story before it expires
+// ---------------------------------------------------------------
+async function keepStoryInVault(story) {
+  const btn = document.getElementById('storyKeep');
+  if (btn) { btn.disabled = true; btn.textContent = 'keeping…'; }
+  try {
+    const res = await fetch(story.url);
+    const blob = await res.blob();
+    const ext = story.media_type === 'video' ? 'mp4' : 'jpg';
+    const file = new File([blob], `story-${story.id}.${ext}`, { type: blob.type });
+    await addToVault(file, 'story', { width: story.width, height: story.height });
+    await loadVault();
+    if (btn) { btn.textContent = '✓ kept'; }
+    toast('kept in the vault');
+  } catch (e) {
+    console.error('keepStoryInVault', e);
+    toast('could not keep it');
+    if (btn) { btn.disabled = false; btn.textContent = 'keep this'; }
+  }
+}
+
 
 // ----- SETTINGS -----
 function renderSettings() {
@@ -5537,6 +6064,13 @@ function wireEvents() {
   document.querySelectorAll('.filter-tab').forEach(t => {
     t.onclick = () => filterQuestions(t.dataset.filter);
   });
+  const vAdd = document.getElementById('vaultAdd');
+  const vAddBtn = document.getElementById('vaultAddBtn');
+  const vFile = document.getElementById('vaultFile');
+  if (vAdd) vAdd.onclick = () => vFile.click();
+  if (vAddBtn) vAddBtn.onclick = () => vFile.click();
+  if (vFile) vFile.onchange = handleVaultUpload;
+
   document.getElementById('newDrawingBtn').onclick = () => {
     openEditor({ mode: 'board', onDone: (dataUrl) => saveDrawing(dataUrl) });
   };
