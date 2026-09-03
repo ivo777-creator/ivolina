@@ -8,7 +8,8 @@ import { createClient } from '@supabase/supabase-js';
 
 export const runtime = 'nodejs';
 
-const RELATIONSHIP_START = new Date('2026-05-08T00:00:00Z');
+const FIRST_CONTACT = new Date('2026-05-08T00:00:00Z');       // the day they first spoke
+const RELATIONSHIP_START = new Date('2026-07-27T00:00:00Z');  // the day they became a couple
 
 const VAPID_PUBLIC = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
 const VAPID_PRIVATE = process.env.VAPID_PRIVATE_KEY;
@@ -64,6 +65,19 @@ function milestonesFor(today, events) {
         tag: `months-${monthsApart}`,
         title: `${monthsApart} months together`,
         message: 'Another six months of us.',
+      });
+    }
+  }
+
+  // The day you first spoke gets its own yearly nod.
+  if (today.getUTCDate() === FIRST_CONTACT.getUTCDate()
+      && today.getUTCMonth() === FIRST_CONTACT.getUTCMonth()) {
+    const years = today.getUTCFullYear() - FIRST_CONTACT.getUTCFullYear();
+    if (years > 0) {
+      out.push({
+        tag: `first-contact-${years}`,
+        title: years === 1 ? 'One year since we first spoke' : `${years} years since we first spoke`,
+        message: 'Where it all started 💌',
       });
     }
   }
