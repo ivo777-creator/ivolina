@@ -414,14 +414,18 @@ body::before {
   z-index: -2;
   transition: opacity 0.45s ease;
 }
-/* A very gentle settling towards the bottom — no hard line anywhere. */
+/* The colour carries all the way to the bottom. A fourth, cooler wash
+   rises from below so the lower half is part of the aurora too, rather
+   than fading out to a flat background. */
 body::after {
   content: '';
   position: fixed;
-  inset: 0;
-  background: linear-gradient(180deg, transparent 30%, color-mix(in srgb, var(--bg-0) 92%, transparent) 100%);
+  inset: -10%;
+  background:
+    radial-gradient(95% 55% at 12% 108%, var(--aurora-2), transparent 66%),
+    radial-gradient(85% 50% at 92% 96%, var(--aurora-1), transparent 62%);
   pointer-events: none;
-  z-index: -1;
+  z-index: -2;
 }
 
 /* Numbers that should read as numbers, not as decoration. */
@@ -611,8 +615,25 @@ textarea.input { resize: none; min-height: 100px; line-height: 1.5; }
 .avatar-display { width: 88px; height: 88px; border-radius: 50%; margin: 8px auto 16px; background: linear-gradient(135deg, var(--accent), var(--accent-soft)); display: flex; align-items: center; justify-content: center;  font-size: 36px; color: white; overflow: hidden; position: relative; box-shadow: 0 8px 32px color-mix(in srgb, var(--accent) 40%, transparent); }
 .avatar-display img { width: 100%; height: 100%; object-fit: cover; }
 
-.toast { position: fixed; top: calc(env(safe-area-inset-top) + 16px); left: 50%; transform: translateX(-50%) translateY(-100px); background: var(--bg-2); border: 1px solid var(--glass-border); color: var(--text); padding: 12px 20px; border-radius: 100px; font-size: 14px; font-weight: 500; z-index: 600; transition: transform 0.4s cubic-bezier(0.16,1,0.3,1); box-shadow: 0 8px 32px rgba(0,0,0,0.4); max-width: calc(100vw - 40px); }
-.toast.show { transform: translateX(-50%) translateY(0); }
+/* Hidden by its OWN height plus the safe area, so it can never leave a
+   sliver on screen no matter how tall the notch is. Opacity and
+   visibility do the rest, in case a transform is ever interrupted. */
+.toast {
+  position: fixed; top: calc(env(safe-area-inset-top) + 14px); left: 50%;
+  transform: translateX(-50%) translateY(calc(-100% - env(safe-area-inset-top) - 28px));
+  background: var(--bg-2); border: 0.5px solid var(--glass-border); color: var(--text);
+  padding: 12px 20px; border-radius: var(--r-pill);
+  font-size: 14px; font-weight: 500; letter-spacing: -0.01em;
+  z-index: 600; max-width: calc(100vw - 40px);
+  box-shadow: 0 10px 34px rgba(0,0,0,0.35);
+  opacity: 0; visibility: hidden;
+  transition: transform 0.38s var(--ease), opacity 0.28s ease, visibility 0s linear 0.38s;
+}
+.toast.show {
+  transform: translateX(-50%) translateY(0);
+  opacity: 1; visibility: visible;
+  transition: transform 0.38s var(--ease-spring), opacity 0.2s ease, visibility 0s;
+}
 .empty { text-align: center; padding: 40px 20px; color: var(--text-muted); }
 .empty-icon { font-size: 40px; margin-bottom: 12px; opacity: 0.5; }
 .empty-text { font-weight: 400; }
@@ -1240,7 +1261,7 @@ const HTML = `
       <div class="settings-row" id="logoutRow"><span class="settings-label" style="color: #ff95a5;">logout</span><span class="settings-value">›</span></div>
     </div>
     <div style="text-align: center; margin-top: 32px; color: var(--text-muted); font-size: 12px; font-weight: 400;">
-      ivolina v2.6.2 · made with love
+      ivolina v2.6.3 · made with love
     </div>
   </div>
 </div>
@@ -5010,10 +5031,10 @@ function openThemeSettings() {
 // Shown once after an update, then never again until the next one.
 // Add the newest release at the top; older entries can stay.
 // ===============================================================
-const APP_VERSION = '2.6.2';
+const APP_VERSION = '2.6.3';
 
 const RELEASE_NOTES = {
-  '2.6.2': {
+  '2.6.3': {
     title: 'A new look',
     lines: [
       'Light and dark — ivolina now follows your iPhone, or you can pick one in settings',
@@ -5200,6 +5221,14 @@ function toast(msg) {
   t.classList.add('show');
   clearTimeout(toastTimeout);
   toastTimeout = setTimeout(() => t.classList.remove('show'), 2400);
+
+  // Belt and braces: a tap dismisses it, and if it is somehow still
+  // showing well past its time, take it down anyway.
+  t.style.pointerEvents = 'auto';
+  t.onclick = () => { clearTimeout(toastTimeout); t.classList.remove('show'); };
+  setTimeout(() => {
+    if (t.classList.contains('show') && t.textContent === msg) t.classList.remove('show');
+  }, 6000);
 }
 
 // ----- REALTIME -----
