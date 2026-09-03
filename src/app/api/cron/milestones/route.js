@@ -7,6 +7,10 @@ import webpush from 'web-push';
 import { createClient } from '@supabase/supabase-js';
 
 export const runtime = 'nodejs';
+// Never run this at build time. It only makes sense on a real request,
+// and executing it during the build turns a missing key into a failed
+// deployment instead of a quiet warning.
+export const dynamic = 'force-dynamic';
 
 const FIRST_CONTACT = new Date('2026-05-08T00:00:00Z');       // the day they first spoke
 const RELATIONSHIP_START = new Date('2026-07-27T00:00:00Z');  // the day they became a couple
