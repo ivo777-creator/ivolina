@@ -1,5 +1,5 @@
 // ===============================================================
-// IVOLINA v2.8 — private vault, story keeping, swipe-back rebuilt
+// IVOLINA v2.8.1 — vault memory fix, hidden save, no stale pages
 // ===============================================================
 import { createClient } from '@supabase/supabase-js';
 
@@ -1157,6 +1157,37 @@ html[data-theme="light"] .top-blur {
   cursor: pointer; z-index: 5; padding: 0;
 }
 
+/* The save control is invisible on purpose. It sits where the button
+   used to be, and takes two taps inside a second. */
+.vault-save-hidden {
+  display: block; width: 100%; height: 46px;
+  background: transparent; border: none; padding: 0; margin-bottom: 10px;
+  cursor: pointer; -webkit-tap-highlight-color: transparent;
+  position: relative;
+}
+.vault-save-hidden::after {
+  content: ''; position: absolute; left: 50%; top: 50%;
+  transform: translate(-50%, -50%); width: 26px; height: 2px;
+  border-radius: 2px; background: var(--text-muted);
+  opacity: 0; transition: opacity 0.25s;
+}
+.vault-save-hidden.armed::after { opacity: 0.35; }
+.vault-save-hidden.working::after {
+  opacity: 0.8; background: var(--accent); width: 40px;
+}
+
+.vault-video-holder { position: relative; width: 100%; display: flex; align-items: center; justify-content: center; }
+.vault-video-holder img { max-width: 100%; max-height: 52vh; display: block; }
+.vault-video-holder video { max-width: 100%; max-height: 52vh; display: block; }
+.vault-play {
+  position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
+  width: 58px; height: 58px; border-radius: 50%;
+  background: rgba(0,0,0,0.5); border: 1px solid rgba(255,255,255,0.3);
+  backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+  color: #fff; font-size: 20px; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+}
+
 /* ===== CHAT ===== */
 .chat-divider { text-align: center; margin: 28px 0 16px; font-weight: 400; color: var(--text-muted); font-size: 13px; display: flex; align-items: center; gap: 10px; }
 .chat-divider::before, .chat-divider::after { content: ''; flex: 1; height: 1px; background: var(--glass-border); }
@@ -1383,7 +1414,7 @@ const HTML = `
       <div class="settings-row" id="logoutRow"><span class="settings-label" style="color: #ff95a5;">logout</span><span class="settings-value">›</span></div>
     </div>
     <div style="text-align: center; margin-top: 32px; color: var(--text-muted); font-size: 12px; font-weight: 400;">
-      ivolina v2.8 · made with love
+      ivolina v2.8.1 · made with love
     </div>
   </div>
 </div>
@@ -3792,10 +3823,25 @@ function isStandalone() {
     || window.matchMedia('(display-mode: standalone)').matches;
 }
 
+let swReloadArmed = false;
+
 async function registerServiceWorker() {
   if (!('serviceWorker' in navigator)) return null;
   try {
-    return await navigator.serviceWorker.register('/sw.js');
+    const reg = await navigator.serviceWorker.register('/sw.js', { updateViaCache: 'none' });
+    reg.update().catch(() => {});
+
+    // If a newer worker takes over while we're running, the page we're
+    // looking at is out of date. Reload once, quietly.
+    if (!swReloadArmed) {
+      swReloadArmed = true;
+      navigator.serviceWorker.addEventListener('controllerchange', () => {
+        if (sessionStorage.getItem('ivolina_reloaded') === '1') return;
+        try { sessionStorage.setItem('ivolina_reloaded', '1'); } catch {}
+        window.location.reload();
+      });
+    }
+    return reg;
   } catch (e) {
     console.error('service worker registration failed', e);
     return null;
@@ -5334,10 +5380,10 @@ function openThemeSettings() {
 // Shown once after an update, then never again until the next one.
 // Add the newest release at the top; older entries can stay.
 // ===============================================================
-const APP_VERSION = '2.8';
+const APP_VERSION = '2.8.1';
 
 const RELEASE_NOTES = {
-  '2.8': {
+  '2.8.1': {
     title: 'Somewhere to keep things',
     lines: [
       'A private place for photos and videos — originals, untouched',
@@ -5586,33 +5632,86 @@ async function openVaultItem(id) {
   if (!item) return;
   vault.selected = item;
 
-  const url = await signedUrl(item.path);
   const when = new Date(item.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
   const who = state.profile[item.owner]?.name || item.owner;
 
+  // Show the light preview first. Loading a full-size original — or worse,
+  // a whole video — straight into the page can use enough memory that iOS
+  // shuts the app down and reopens it on a stale cached page. So the
+  // original is only fetched when it is actually asked for.
+  const previewUrl = await signedUrl(item.thumb_path || item.path);
+
   showModal(`
     <div class="modal-handle"></div>
-    <div class="vault-preview">
+    <div class="vault-preview" id="vaultPreview">
       ${item.kind === 'video'
-        ? `<video src="${url}" controls playsinline preload="metadata"></video>`
-        : `<img src="${url}" alt="">`}
+        ? `<div class="vault-video-holder" id="vaultVideoHolder">
+             <img src="${previewUrl || ''}" alt="">
+             <button class="vault-play" id="vaultPlay">▶</button>
+           </div>`
+        : `<img src="${previewUrl || ''}" alt="" id="vaultImg">`}
     </div>
-    <p style="margin-bottom:16px;">${escapeHtml(who)} · ${when} · ${formatBytes(item.size_bytes)}${item.width ? ` · ${item.width}×${item.height}` : ''}</p>
-    <button class="btn btn-primary" id="vaultSave">save to my phone</button>
+    <p style="margin-bottom:14px;">${escapeHtml(who)} · ${when} · ${formatBytes(item.size_bytes)}${item.width ? ` · ${item.width}×${item.height}` : ''}</p>
+    ${item.kind === 'image' ? '<button class="btn btn-ghost" id="vaultFull">view full size</button>' : ''}
+    <button class="vault-save-hidden" id="vaultSave" aria-label="save"></button>
     <button class="btn btn-danger" id="vaultDelete">delete from the vault</button>
     <button class="btn btn-ghost" id="vaultClose">close</button>
   `);
 
-  document.getElementById('vaultSave').onclick = () => saveVaultItemToPhone(item);
+  // Play a video only when asked, and never preload it.
+  const play = document.getElementById('vaultPlay');
+  if (play) play.onclick = async () => {
+    const holder = document.getElementById('vaultVideoHolder');
+    const url = await signedUrl(item.path);
+    if (!url || !holder) return;
+    holder.innerHTML = `<video src="${url}" controls playsinline preload="none" autoplay></video>`;
+  };
+
+  const full = document.getElementById('vaultFull');
+  if (full) full.onclick = async () => {
+    const url = await signedUrl(item.path);
+    const img = document.getElementById('vaultImg');
+    if (url && img) {
+      full.disabled = true;
+      full.textContent = 'loading…';
+      img.onload = () => { full.textContent = 'full size'; };
+      img.src = url;
+    }
+  };
+
+  // The save button is deliberately invisible: two taps within a second.
+  const save = document.getElementById('vaultSave');
+  if (save) attachDoubleTapSave(save, item);
+
   document.getElementById('vaultDelete').onclick = () => deleteVaultItem(item);
   document.getElementById('vaultClose').onclick = closeModal;
 }
 
+// Invisible, and only responds to a quick double tap — so nothing is
+// saved to the phone by brushing past it.
+function attachDoubleTapSave(el, item, onSave) {
+  let last = 0;
+  const fire = (e) => {
+    if (e) e.preventDefault();
+    const now = Date.now();
+    if (now - last < 1000 && last !== 0) {
+      last = 0;
+      (onSave || saveVaultItemToPhone)(item, el);
+    } else {
+      last = now;
+      // A single tap gives the faintest acknowledgement, nothing more.
+      el.classList.add('armed');
+      setTimeout(() => el.classList.remove('armed'), 1000);
+    }
+  };
+  el.addEventListener('click', fire);
+  el.addEventListener('dblclick', (e) => { e.preventDefault(); last = 0; (onSave || saveVaultItemToPhone)(item, el); });
+}
+
 // On an iPhone the share sheet is the reliable way into Photos.
 // A plain download link is the fallback everywhere else.
-async function saveVaultItemToPhone(item) {
-  const btn = document.getElementById('vaultSave');
-  if (btn) { btn.disabled = true; btn.textContent = 'preparing…'; }
+async function saveVaultItemToPhone(item, btn) {
+  if (btn) btn.classList.add('working');
   try {
     const url = await signedUrl(item.path);
     const res = await fetch(url);
@@ -5622,7 +5721,7 @@ async function saveVaultItemToPhone(item) {
 
     if (navigator.canShare && navigator.canShare({ files: [file] })) {
       await navigator.share({ files: [file] });
-      if (btn) { btn.disabled = false; btn.textContent = 'save to my phone'; }
+      if (btn) btn.classList.remove('working');
       return;
     }
 
@@ -5643,7 +5742,7 @@ async function saveVaultItemToPhone(item) {
       toast('could not prepare the file');
     }
   } finally {
-    if (btn) { btn.disabled = false; btn.textContent = 'save to my phone'; }
+    if (btn) btn.classList.remove('working');
   }
 }
 
@@ -6155,7 +6254,8 @@ export function boot() {
           }
         } catch (e) { console.warn('subscription refresh failed', e); }
       }
-    } else if (pushSupported()) {
+    } else if ('serviceWorker' in navigator) {
+      // Even without notifications, the worker keeps the page fresh.
       registerServiceWorker();
     }
     const session = lsGet('session');
