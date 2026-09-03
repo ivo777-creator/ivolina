@@ -380,6 +380,13 @@ body[data-user="nikolina"] {
 
 * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; -webkit-touch-callout: none; }
 html, body { overscroll-behavior: none; overflow-x: hidden; }
+/* No scrollbar anywhere — it breaks the illusion of an app. */
+html, body, .screen, .app-content, .preset-list, .sticker-grid,
+.tool-row, .swatch-row, .bg-grid, .cat-chips, .filter-tabs, .story-row {
+  scrollbar-width: none; -ms-overflow-style: none;
+}
+html::-webkit-scrollbar, body::-webkit-scrollbar, .screen::-webkit-scrollbar,
+.app-content::-webkit-scrollbar, .preset-list::-webkit-scrollbar { display: none; width: 0; height: 0; }
 
 body {
   font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'SF Pro Text', system-ui, sans-serif;
@@ -392,22 +399,27 @@ body {
   transition: background-color 0.45s ease, color 0.45s ease;
 }
 
-/* The aurora itself: one light source, both colours, fixed to the top. */
+/* The aurora: one light source over the whole screen, falling away
+   towards the bottom. Two overlapping washes so neither colour ends
+   in a visible edge. */
 body::before {
   content: '';
   position: fixed;
-  top: 0; left: 0; right: 0;
-  height: 46vh;
-  background: linear-gradient(160deg, var(--aurora-1), var(--aurora-2) 55%, transparent);
+  inset: -10%;
+  background:
+    radial-gradient(90% 62% at 18% -8%, var(--aurora-1), transparent 62%),
+    radial-gradient(85% 58% at 88% 2%, var(--aurora-2), transparent 60%),
+    radial-gradient(120% 70% at 50% -18%, var(--aurora-1), transparent 75%);
   pointer-events: none;
-  z-index: -1;
+  z-index: -2;
   transition: opacity 0.45s ease;
 }
+/* A very gentle settling towards the bottom — no hard line anywhere. */
 body::after {
   content: '';
   position: fixed;
   inset: 0;
-  background: linear-gradient(180deg, transparent 40%, var(--bg-0) 88%);
+  background: linear-gradient(180deg, transparent 30%, color-mix(in srgb, var(--bg-0) 92%, transparent) 100%);
   pointer-events: none;
   z-index: -1;
 }
@@ -919,9 +931,8 @@ input.ed-slider::-moz-range-thumb {
 }
 .question-card.by-ivo  { --asker: var(--ivo);  background: color-mix(in srgb, var(--ivo) 7%, var(--card)); }
 .question-card.by-niki { --asker: var(--niki); background: color-mix(in srgb, var(--niki) 7%, var(--card)); }
-/* Both answered: it recedes, so what's open stands out. */
-.question-card.settled { opacity: 0.5; background: var(--card); }
-.question-card.settled .question-text { color: var(--text-dim); }
+/* Both answered: the stripe softens a touch, the words stay as they are. */
+.question-card.settled { border-left-color: color-mix(in srgb, var(--asker) 45%, transparent); }
 
 .question-meta { align-items: center; }
 .asker-label { color: var(--asker, var(--text-muted)); font-weight: 600; }
@@ -972,6 +983,17 @@ input.ed-slider::-moz-range-thumb {
 
 @media (prefers-reduced-motion: reduce) {
   .screen, .counter-num.ticked, .new-dot, .card-dot { animation: none !important; }
+}
+
+/* ===== the top edge blurs what passes under it ===== */
+.top-blur {
+  position: fixed; top: 0; left: 0; right: 0;
+  height: calc(env(safe-area-inset-top) + 30px);
+  z-index: 30; pointer-events: none;
+  backdrop-filter: blur(18px) saturate(1.2);
+  -webkit-backdrop-filter: blur(18px) saturate(1.2);
+  -webkit-mask-image: linear-gradient(180deg, #000 45%, transparent 100%);
+  mask-image: linear-gradient(180deg, #000 45%, transparent 100%);
 }
 
 /* ===== what's new ===== */
@@ -1181,7 +1203,7 @@ const HTML = `
       <div class="settings-row" data-goto="memories"><span class="settings-label">manage moments & countdowns</span><span class="settings-value">›</span></div>
       <div class="settings-row" id="notesRow">
         <span class="settings-label">what's new</span>
-        <span class="settings-value">v${'2.6'} ›</span>
+        <span class="settings-value" id="notesVersion">›</span>
       </div>
       <div class="settings-row" id="themeRow">
         <span class="settings-label">appearance</span>
@@ -1201,7 +1223,7 @@ const HTML = `
       <div class="settings-row" id="logoutRow"><span class="settings-label" style="color: #ff95a5;">logout</span><span class="settings-value">›</span></div>
     </div>
     <div style="text-align: center; margin-top: 32px; color: var(--text-muted); font-size: 12px; font-weight: 400;">
-      ivolina v2.6 · made with love
+      ivolina v2.6.1 · made with love
     </div>
   </div>
 </div>
@@ -1210,6 +1232,7 @@ const HTML = `
 <div class="story-viewer" id="storyViewer"></div>
 <div class="editor-overlay" id="editorOverlay"></div>
 <div class="lock-screen" id="lockScreen"></div>
+<div class="top-blur"></div>
 <div class="toast" id="toast"></div>
 `;
 
@@ -1366,12 +1389,29 @@ function pickQuestionPreviews() {
 // The rule: a dot only appears where YOU still have something to do
 // or something to see. If it lights up everywhere, it means nothing.
 // ---------------------------------------------------------------
+
+// A question stops being "new" the moment you open it — reading it is
+// enough. Whether you've answered is shown by the pills, not the dot.
+function openedQuestionIds() {
+  try { return new Set(JSON.parse(lsGet('openedQuestions') || '[]')); }
+  catch { return new Set(); }
+}
+
+function markQuestionOpened(id) {
+  const seen = openedQuestionIds();
+  if (seen.has(id)) return false;
+  seen.add(id);
+  lsSet('openedQuestions', JSON.stringify([...seen].slice(-300)));
+  return true;
+}
+
 function pendingCounts() {
   const me = state.user;
   const other = me === 'ivo' ? 'nikolina' : 'ivo';
   const seen = seenStoryIds();
+  const opened = openedQuestionIds();
   return {
-    questions: state.questions.filter(q => !q.answers[me]).length,
+    questions: state.questions.filter(q => !q.answers[me] && !opened.has(q.id)).length,
     stories: state.stories.filter(s => s.author === other && !seen.has(s.id)).length,
     drawings: (() => {
       const last = parseInt(lsGet('seenDrawingAt') || '0', 10);
@@ -1500,9 +1540,14 @@ function renderHome() {
 function showAboutMore() {
   showModal(`
     <div class="modal-handle"></div>
-    <h2>more coming soon</h2>
+    <h2>still to come</h2>
     <p style="text-align: left; line-height: 1.6;">
-      Now: categories for questions, and stories that vanish after 24 hours. Coming next: push notifications and a proper drawing studio with brushes, stickers and backgrounds. 🌸
+      Ideas we haven't built yet: hugging mode, where you both touch the screen
+      and feel each other's fingers; a globe with a thread between Wittenbach and
+      Posušje; a translator for Croatian, German and English; and comments under
+      each other's stories.
+      <br><br>
+      Tell Ivo which one you'd want first.
     </p>
     <button class="btn btn-primary" id="aboutOk">got it</button>
   `);
@@ -1697,6 +1742,7 @@ function renderQuestions() {
   const list = document.getElementById('questionsList');
   const me = state.user;
   const other = me === 'ivo' ? 'nikolina' : 'ivo';
+  const openedIds = openedQuestionIds();
   let filtered = [...state.questions];
   if (state.filter === 'unanswered') filtered = filtered.filter(q => !q.answers[me]);
   else if (state.filter === 'theirs') filtered = filtered.filter(q => q.answers[me] && !q.answers[other]);
@@ -1712,8 +1758,8 @@ function renderQuestions() {
     const otherAnswered = !!q.answers[other];
     const dateStr = new Date(q.created).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
     const settled = meAnswered && otherAnswered;
-    // A dot means: this one needs you. Nothing else earns one.
-    const needsYou = !meAnswered;
+    // A dot means: you haven't looked at this yet.
+    const needsYou = !meAnswered && !openedIds.has(q.id);
     return `
       <div class="question-card by-${q.asker === 'ivo' ? 'ivo' : 'niki'} ${settled ? 'settled' : ''}" data-q="${q.id}">
         <div class="question-meta">
@@ -1898,6 +1944,7 @@ async function openQuestion(id) {
   state.currentQuestionId = id;
   const q = state.questions.find(x => x.id === id);
   if (!q) return;
+  markQuestionOpened(id);
   showScreen('questionDetail', { resetScroll: true });
   renderQuestionDetail();
   // Load chat if both answered
@@ -4898,7 +4945,10 @@ function applyTheme() {
     meta.name = 'theme-color';
     document.head.appendChild(meta);
   }
-  meta.content = theme === 'light' ? '#FDFCFF' : '#07060B';
+  // The bar behind the clock should be part of the aurora, not a flat
+  // slab above it. These are the background with the top of the gradient
+  // blended in, so the seam disappears.
+  meta.content = theme === 'light' ? '#D5E1F6' : '#3E4A5D';
 }
 
 function watchSystemTheme() {
@@ -4943,10 +4993,10 @@ function openThemeSettings() {
 // Shown once after an update, then never again until the next one.
 // Add the newest release at the top; older entries can stay.
 // ===============================================================
-const APP_VERSION = '2.6';
+const APP_VERSION = '2.6.1';
 
 const RELEASE_NOTES = {
-  '2.6': {
+  '2.6.1': {
     title: 'A new look',
     lines: [
       'Light and dark — ivolina now follows your iPhone, or you can pick one in settings',
@@ -4970,9 +5020,24 @@ function showReleaseNotesIfNew() {
   const seen = lsGet('seenVersion');
   if (seen === APP_VERSION) return false;
 
+  // Never take the screen away from something already open — a dialog,
+  // the editor, a story. The notes can wait until the next quiet moment.
+  if (document.getElementById('modalBackdrop')?.classList.contains('active')) return false;
+  if (document.getElementById('editorOverlay')?.classList.contains('active')) return false;
+  if (document.getElementById('storyViewer')?.classList.contains('active')) return false;
+  if (document.getElementById('lockScreen')?.classList.contains('active')) return false;
+
   const note = RELEASE_NOTES[APP_VERSION];
-  // First ever run: don't greet someone with release notes.
-  if (!note || !seen) {
+  if (!note) {
+    lsSet('seenVersion', APP_VERSION);
+    return false;
+  }
+
+  // A genuinely fresh install means: never logged in here before.
+  // Someone who has been using ivolina and simply predates this marker
+  // has updated, and should see what changed.
+  const brandNew = !seen && !lsGet('session');
+  if (brandNew) {
     lsSet('seenVersion', APP_VERSION);
     return false;
   }
@@ -5002,6 +5067,9 @@ function renderSettings() {
   else avatarEl.textContent = me === 'ivo' ? 'I' : 'N';
   document.getElementById('settingsNameValue').textContent = p?.name || '—';
   document.getElementById('settingsUserValue').textContent = me === 'ivo' ? 'Ivo (blue)' : 'Nikolina (pink)';
+
+  const nver = document.getElementById('notesVersion');
+  if (nver) nver.textContent = 'v' + APP_VERSION + ' ›';
 
   const tv = document.getElementById('themeValue');
   if (tv) {
