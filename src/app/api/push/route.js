@@ -6,6 +6,10 @@ import webpush from 'web-push';
 import { createClient } from '@supabase/supabase-js';
 
 export const runtime = 'nodejs';
+// Never run this at build time. It only makes sense on a real request,
+// and executing it during the build turns a missing key into a failed
+// deployment instead of a quiet warning.
+export const dynamic = 'force-dynamic';
 
 const VAPID_PUBLIC = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
 const VAPID_PRIVATE = process.env.VAPID_PRIVATE_KEY;
