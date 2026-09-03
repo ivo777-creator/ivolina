@@ -1,5 +1,5 @@
 // ===============================================================
-// IVOLINA v2.6 — Aurora: light/dark, iOS type, coloured questions, motion
+// IVOLINA v2.7 — card-to-screen morph, rolling numbers, richer aurora
 // ===============================================================
 import { createClient } from '@supabase/supabase-js';
 
@@ -330,14 +330,15 @@ const CSS = `
   --text-dim: #A49DB4;
   --text-muted: #77718A;
 
-  --card: rgba(255, 255, 255, 0.055);
-  --card-hover: rgba(255, 255, 255, 0.085);
+  --card: rgba(14, 12, 24, 0.42);
+  --card-hover: rgba(14, 12, 24, 0.55);
   --glass: rgba(255, 255, 255, 0.055);
   --glass-border: rgba(255, 255, 255, 0.09);
   --hairline: rgba(255, 255, 255, 0.07);
 
-  --aurora-1: rgba(123, 196, 245, 0.30);
-  --aurora-2: rgba(244, 168, 200, 0.22);
+  --aurora-1: rgba(123, 196, 245, 0.52);
+  --aurora-2: rgba(244, 168, 200, 0.44);
+  --aurora-3: rgba(168, 130, 245, 0.34);
   --on-accent: #07060B;
 
   --r-card: 16px;
@@ -362,14 +363,15 @@ html[data-theme="light"] {
   --text-dim: #5C5668;
   --text-muted: #8A8398;
 
-  --card: rgba(255, 255, 255, 0.85);
-  --card-hover: #FFFFFF;
+  --card: rgba(255, 255, 255, 0.72);
+  --card-hover: rgba(255, 255, 255, 0.88);
   --glass: rgba(255, 255, 255, 0.85);
   --glass-border: rgba(21, 18, 32, 0.09);
   --hairline: rgba(21, 18, 32, 0.07);
 
-  --aurora-1: rgba(123, 196, 245, 0.34);
-  --aurora-2: rgba(244, 168, 200, 0.26);
+  --aurora-1: rgba(90, 175, 240, 0.42);
+  --aurora-2: rgba(240, 140, 185, 0.36);
+  --aurora-3: rgba(150, 120, 235, 0.24);
   --on-accent: #FFFFFF;
 }
 
@@ -407,9 +409,10 @@ body::before {
   position: fixed;
   inset: -10%;
   background:
-    radial-gradient(90% 62% at 18% -8%, var(--aurora-1), transparent 62%),
-    radial-gradient(85% 58% at 88% 2%, var(--aurora-2), transparent 60%),
-    radial-gradient(120% 70% at 50% -18%, var(--aurora-1), transparent 75%);
+    radial-gradient(105% 72% at 14% -6%, var(--aurora-1), transparent 66%),
+    radial-gradient(100% 66% at 92% 4%, var(--aurora-2), transparent 64%),
+    radial-gradient(85% 55% at 55% 22%, var(--aurora-3), transparent 62%),
+    radial-gradient(135% 80% at 50% -16%, var(--aurora-1), transparent 78%);
   pointer-events: none;
   z-index: -2;
   transition: opacity 0.45s ease;
@@ -422,8 +425,9 @@ body::after {
   position: fixed;
   inset: -10%;
   background:
-    radial-gradient(95% 55% at 12% 108%, var(--aurora-2), transparent 66%),
-    radial-gradient(85% 50% at 92% 96%, var(--aurora-1), transparent 62%);
+    radial-gradient(110% 62% at 10% 106%, var(--aurora-2), transparent 68%),
+    radial-gradient(100% 58% at 94% 94%, var(--aurora-1), transparent 66%),
+    radial-gradient(80% 46% at 48% 78%, var(--aurora-3), transparent 62%);
   pointer-events: none;
   z-index: -2;
 }
@@ -1052,6 +1056,50 @@ html[data-theme="light"] .top-blur {
   width: 6px; height: 6px; border-radius: 50%; background: var(--accent);
 }
 
+/* ===== a card growing into its screen ===== */
+.card-ghost {
+  position: fixed;
+  z-index: 20;
+  background: var(--card);
+  border: 0.5px solid var(--glass-border);
+  border-radius: var(--r-card);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  pointer-events: none;
+  opacity: 1;
+}
+.card-ghost.growing {
+  transition:
+    top 0.42s cubic-bezier(0.22, 1, 0.36, 1),
+    left 0.42s cubic-bezier(0.22, 1, 0.36, 1),
+    width 0.42s cubic-bezier(0.22, 1, 0.36, 1),
+    height 0.42s cubic-bezier(0.22, 1, 0.36, 1),
+    border-radius 0.42s cubic-bezier(0.22, 1, 0.36, 1),
+    opacity 0.4s ease 0.06s;
+}
+/* Arriving from a card: the screen rises the last little bit rather
+   than sliding in from nowhere. */
+.screen.morphed { animation: screenMorph 0.4s cubic-bezier(0.22, 1, 0.36, 1); }
+@keyframes screenMorph {
+  from { opacity: 0; transform: scale(0.985); }
+  to { opacity: 1; transform: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .card-ghost.growing { transition: none; }
+  .screen.morphed { animation: none; }
+}
+
+/* ===== numbers that roll over ===== */
+.roll { display: inline-block; position: relative; overflow: hidden; vertical-align: bottom; line-height: 1.05; }
+.roll-in  { animation: rollIn 0.34s cubic-bezier(0.22, 1, 0.36, 1); }
+.roll-out { position: absolute; left: 0; right: 0; top: 0; animation: rollOut 0.34s cubic-bezier(0.22, 1, 0.36, 1) forwards; }
+@keyframes rollIn  { from { transform: translateY(90%); opacity: 0; } to { transform: none; opacity: 1; } }
+@keyframes rollOut { from { transform: none; opacity: 1; } to { transform: translateY(-90%); opacity: 0; } }
+@media (prefers-reduced-motion: reduce) {
+  .roll-in, .roll-out { animation: none; }
+  .roll-out { display: none; }
+}
+
 /* ===== CHAT ===== */
 .chat-divider { text-align: center; margin: 28px 0 16px; font-weight: 400; color: var(--text-muted); font-size: 13px; display: flex; align-items: center; gap: 10px; }
 .chat-divider::before, .chat-divider::after { content: ''; flex: 1; height: 1px; background: var(--glass-border); }
@@ -1261,7 +1309,7 @@ const HTML = `
       <div class="settings-row" id="logoutRow"><span class="settings-label" style="color: #ff95a5;">logout</span><span class="settings-value">›</span></div>
     </div>
     <div style="text-align: center; margin-top: 32px; color: var(--text-muted); font-size: 12px; font-weight: 400;">
-      ivolina v2.6.3 · made with love
+      ivolina v2.7 · made with love
     </div>
   </div>
 </div>
@@ -1294,15 +1342,77 @@ function avatarHtml(who, size = 'tiny') {
   return `<span class="${cls} ${classWho}">${initial}</span>`;
 }
 
+
+// ===============================================================
+// CARD → SCREEN (v2.7)
+// Tapping a card grows that card into the screen it opens, instead
+// of one view replacing another. A copy of the card is flown from
+// where it sits to fill the display; the real screen fades in
+// underneath and the copy is thrown away.
+// ===============================================================
+let morphing = false;
+
+function prefersLessMotion() {
+  return window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+}
+
+function morphCardToScreen(cardEl, screenName) {
+  // If anything is in the way, or the phone asks for less motion,
+  // just go — a missing flourish is better than a stuck screen.
+  if (!cardEl || morphing || prefersLessMotion() || !cardEl.getBoundingClientRect) {
+    showScreen(screenName);
+    return;
+  }
+
+  const rect = cardEl.getBoundingClientRect();
+  if (!rect.width || !rect.height) { showScreen(screenName); return; }
+
+  morphing = true;
+
+  const ghost = document.createElement('div');
+  ghost.className = 'card-ghost';
+  ghost.style.top = rect.top + 'px';
+  ghost.style.left = rect.left + 'px';
+  ghost.style.width = rect.width + 'px';
+  ghost.style.height = rect.height + 'px';
+  document.body.appendChild(ghost);
+
+  cardEl.style.opacity = '0';
+
+  // Let the ghost land at its starting size before growing it.
+  requestAnimationFrame(() => {
+    ghost.classList.add('growing');
+    ghost.style.top = '0px';
+    ghost.style.left = '0px';
+    ghost.style.width = '100%';
+    ghost.style.height = '100%';
+    ghost.style.borderRadius = '0px';
+    ghost.style.opacity = '0';
+  });
+
+  // Bring the real screen up while the ghost is still expanding, so
+  // the two overlap instead of one flashing after the other.
+  setTimeout(() => showScreen(screenName, { morphed: true }), 130);
+
+  setTimeout(() => {
+    ghost.remove();
+    cardEl.style.opacity = '';
+    morphing = false;
+  }, 460);
+}
+
 function showScreen(name, opts = {}) {
   // Remember where you were on the screen you're leaving.
   const leaving = document.querySelector('.screen.active');
   if (leaving) state.scrollPositions[leaving.id] = window.scrollY;
 
-  document.querySelectorAll('.screen').forEach(s => { s.classList.remove('active'); s.classList.remove('from-back'); });
+  document.querySelectorAll('.screen').forEach(s => {
+    s.classList.remove('active'); s.classList.remove('from-back'); s.classList.remove('morphed');
+  });
   const t = document.getElementById('screen-' + name);
   if (t) {
     if (opts.back) t.classList.add('from-back');
+    else if (opts.morphed) t.classList.add('morphed');
     t.classList.add('active');
   }
   if (name === 'home') renderHome();
@@ -1570,7 +1680,7 @@ function renderHome() {
     </div>
   `;
   grid.querySelectorAll('[data-goto]').forEach(el => {
-    el.onclick = () => showScreen(el.dataset.goto);
+    el.onclick = () => morphCardToScreen(el, el.dataset.goto);
   });
   document.getElementById('moreCard').onclick = showAboutMore;
 }
@@ -1661,6 +1771,43 @@ function daysSince(date) {
   return Math.floor((Date.now() - date.getTime()) / 86400000);
 }
 
+
+// The old number leaves upwards while the new one arrives from below,
+// so a ticking second reads as movement rather than a flicker.
+function rollNumber(el, value) {
+  if (!el) return;
+  const next = String(value);
+  if (el.dataset.value === next) return;
+
+  const first = el.dataset.value === undefined;
+  el.dataset.value = next;
+
+  if (first || prefersLessMotion()) {
+    el.textContent = next;
+    return;
+  }
+
+  const previous = el.textContent;
+  el.textContent = '';
+  el.classList.add('roll');
+
+  const incoming = document.createElement('span');
+  incoming.className = 'roll-in';
+  incoming.textContent = next;
+
+  const outgoing = document.createElement('span');
+  outgoing.className = 'roll-out';
+  outgoing.textContent = previous;
+
+  el.appendChild(outgoing);
+  el.appendChild(incoming);
+
+  setTimeout(() => {
+    // Only tidy up if nothing newer has arrived in the meantime.
+    if (el.dataset.value === next) el.textContent = next;
+  }, 340);
+}
+
 function updateCounters() {
   const e = elapsedFromStart();
 
@@ -1675,15 +1822,7 @@ function updateCounters() {
     }
   }
 
-  const set = (id, v) => {
-    const el = document.getElementById(id);
-    if (!el) return;
-    if (el.textContent === String(v)) return;   // nothing changed, don't flicker
-    el.textContent = v;
-    el.classList.remove('ticked');
-    void el.offsetWidth;
-    el.classList.add('ticked');
-  };
+  const set = (id, v) => rollNumber(document.getElementById(id), v);
   if (RELATIONSHIP_START > new Date()) {
     set('cYears', 0); set('cMonths', 0); set('cDays', 0); set('cHours', 0); set('cMins', 0); set('cSecs', 0);
   } else {
@@ -1815,7 +1954,7 @@ function renderQuestions() {
     `;
   }).join('');
   list.querySelectorAll('[data-q]').forEach(c => {
-    c.onclick = () => openQuestion(c.dataset.q);
+    c.onclick = () => openQuestion(c.dataset.q, c);
   });
 }
 
@@ -1978,12 +2117,17 @@ async function submitQuestion() {
 }
 
 // ----- QUESTION DETAIL with CHAT -----
-async function openQuestion(id) {
+async function openQuestion(id, fromCard) {
   state.currentQuestionId = id;
   const q = state.questions.find(x => x.id === id);
   if (!q) return;
   markQuestionOpened(id);
-  showScreen('questionDetail', { resetScroll: true });
+  if (fromCard) {
+    morphCardToScreen(fromCard, 'questionDetail');
+    state.scrollPositions['screen-questionDetail'] = 0;
+  } else {
+    showScreen('questionDetail', { resetScroll: true });
+  }
   renderQuestionDetail();
   // Load chat if both answered
   const me = state.user;
@@ -5031,9 +5175,18 @@ function openThemeSettings() {
 // Shown once after an update, then never again until the next one.
 // Add the newest release at the top; older entries can stay.
 // ===============================================================
-const APP_VERSION = '2.6.3';
+const APP_VERSION = '2.7';
 
 const RELEASE_NOTES = {
+  '2.7': {
+    title: 'It moves now',
+    lines: [
+      'Tapping a card grows it into the screen it opens',
+      'The seconds roll over instead of blinking',
+      'More colour — the blue and pink carry the whole screen',
+      'A third, violet note where the two meet',
+    ],
+  },
   '2.6.3': {
     title: 'A new look',
     lines: [
