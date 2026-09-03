@@ -1,7 +1,42 @@
-/* ivolina service worker — receives push notifications */
+/* ivolina service worker
+   Two jobs:
+     1. receive push notifications
+     2. make sure the app never comes back on a stale page
+
+   There is deliberately no offline cache. If iOS restarts the app after
+   running out of memory, it must fetch the current version rather than
+   resurrect whatever it happened to have lying around.
+*/
+
+const SW_VERSION = 'ivolina-3';
 
 self.addEventListener('install', () => self.skipWaiting());
-self.addEventListener('activate', (e) => e.waitUntil(self.clients.claim()));
+
+self.addEventListener('activate', (event) => {
+  event.waitUntil((async () => {
+    // Throw away anything an older service worker cached.
+    const names = await caches.keys();
+    await Promise.all(names.map(n => caches.delete(n)));
+    await self.clients.claim();
+  })());
+});
+
+// Page loads always go to the network. If the network is genuinely
+// unreachable we fall back to whatever the browser has, rather than
+// showing nothing.
+self.addEventListener('fetch', (event) => {
+  const req = event.request;
+  if (req.mode !== 'navigate') return;
+
+  event.respondWith((async () => {
+    try {
+      return await fetch(req, { cache: 'no-store' });
+    } catch (e) {
+      const fallback = await caches.match(req);
+      return fallback || Response.error();
+    }
+  })());
+});
 
 self.addEventListener('push', (event) => {
   let payload = {};
@@ -30,7 +65,6 @@ self.addEventListener('notificationclick', (event) => {
 
   event.waitUntil(
     self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((list) => {
-      // If ivolina is already open somewhere, just bring it forward.
       for (const client of list) {
         if (client.url.includes(self.location.origin) && 'focus' in client) {
           client.navigate(url);
