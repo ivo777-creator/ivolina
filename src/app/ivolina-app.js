@@ -1,5 +1,5 @@
 // ===============================================================
-// IVOLINA v2.4.2 — fixes: dialogs hidden behind the editor, sticker placement
+// IVOLINA v2.5.1 — app lock, story cleanup, two relationship dates
 // ===============================================================
 import { createClient } from '@supabase/supabase-js';
 
@@ -13,7 +13,9 @@ if (SUPABASE_URL && SUPABASE_KEY) {
   });
 }
 
-const RELATIONSHIP_START = new Date('2026-07-27T00:00:00');
+const FIRST_CONTACT = new Date('2026-05-08T00:00:00');       // the day you first spoke
+const RELATIONSHIP_START = new Date('2026-07-27T00:00:00');  // the day you became you two
+const ANNIVERSARY = new Date('2027-07-27T00:00:00');
 
 const QUESTION_CATEGORIES = [
   { id: 'all',        label: 'all',        emoji: '\u2726' },
@@ -201,7 +203,7 @@ function categoryOf(text) {
 }
 
 const MOCK_EVENTS = [
-  { id: 'evt_anniv', emoji: '🌸', title: 'Our first anniversary', date: '2027-05-08', _system: true },
+  { id: 'evt_anniv', emoji: '🌸', title: 'Our first anniversary', date: '2027-07-27', _system: true },
 ];
 
 const PASSWORDS = { ivo: 'nikivo7', nikolina: 'nikolinaiivo777' };
@@ -772,6 +774,41 @@ input.ed-slider::-moz-range-thumb {
   font-weight: 600; font-family: inherit; cursor: pointer; margin-bottom: 20px;
 }
 
+/* ===== APP LOCK (v2.5) ===== */
+@keyframes shake { 0%,100%{transform:translateX(0)} 25%{transform:translateX(-8px)} 75%{transform:translateX(8px)} }
+
+.lock-screen {
+  position: fixed; inset: 0; z-index: 700;
+  background: var(--bg-0);
+  background-image:
+    radial-gradient(ellipse 80% 50% at 50% 0%, color-mix(in srgb, var(--accent) 20%, transparent), transparent),
+    linear-gradient(180deg, var(--bg-0) 0%, var(--bg-1) 100%);
+  display: none; align-items: center; justify-content: center;
+  padding: 24px calc(24px + env(safe-area-inset-left)) calc(24px + env(safe-area-inset-bottom));
+}
+.lock-screen.active { display: flex; }
+.lock-inner { width: 100%; max-width: 320px; text-align: center; }
+.lock-mark { font-family: 'Fraunces', serif; font-size: 34px; margin-bottom: 6px;
+  background: linear-gradient(135deg, #7BC4F5 0%, #F4A8C8 100%);
+  -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
+.lock-name { font-family: 'Fraunces', serif; font-style: italic; color: var(--text-dim); font-size: 15px; }
+.lock-msg { color: var(--text-muted); font-size: 13px; margin: 14px 0 26px; min-height: 18px; }
+.lock-btn { max-width: 280px; margin-left: auto; margin-right: auto; }
+
+.lock-pin { margin-top: 18px; }
+.pin-dots { display: flex; gap: 14px; justify-content: center; margin-bottom: 22px; }
+.pin-dot { width: 13px; height: 13px; border-radius: 50%; border: 1.5px solid var(--glass-border); }
+.pin-dot.on { background: var(--accent); border-color: var(--accent); }
+.pin-pad { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; max-width: 260px; margin: 0 auto; }
+.pin-key {
+  aspect-ratio: 1; border-radius: 50%; border: 1px solid var(--glass-border);
+  background: var(--glass); color: var(--text);
+  font-size: 22px; font-family: inherit; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  transition: transform 0.12s, background 0.12s;
+}
+.pin-key:active { transform: scale(0.93); background: rgba(255,255,255,0.09); }
+
 /* ===== CHAT ===== */
 .chat-divider { text-align: center; margin: 28px 0 16px; font-family: 'Fraunces', serif; font-style: italic; color: var(--text-muted); font-size: 13px; display: flex; align-items: center; gap: 10px; }
 .chat-divider::before, .chat-divider::after { content: ''; flex: 1; height: 1px; background: var(--glass-border); }
@@ -877,7 +914,7 @@ const HTML = `
   </div>
   <div class="app-content">
     <div class="counter-card">
-      <div class="counter-label">together since 8 may 2026</div>
+      <div class="counter-label">together since 27 july 2026</div>
       <div class="counter-grid">
         <div class="counter-unit"><div class="counter-num" id="cYears">0</div><div class="counter-name">years</div></div>
         <div class="counter-unit"><div class="counter-num" id="cMonths">0</div><div class="counter-name">months</div></div>
@@ -892,6 +929,12 @@ const HTML = `
     <div class="counter-card" style="padding: 20px;">
       <div class="counter-label">until our first anniversary</div>
       <div style="font-family: 'Fraunces', serif; font-size: 32px; margin-top: 4px;" id="anniversaryCountdown">— days</div>
+    </div>
+
+    <div class="counter-card" style="padding: 20px;">
+      <div class="counter-label">since we first spoke, 8 may 2026</div>
+      <div style="font-family: 'Fraunces', serif; font-size: 32px; margin-top: 4px;" id="firstContactCount">— days</div>
+      <div style="font-size: 11px; color: var(--text-muted); margin-top: 6px;" id="firstContactSub"></div>
     </div>
     <div class="section-title">our moments<button class="add-btn" id="addEventBtn">+ add</button></div>
     <div id="eventsList"></div>
@@ -952,6 +995,10 @@ const HTML = `
     </div>
     <div class="settings-section">
       <div class="settings-row" data-goto="memories"><span class="settings-label">manage moments & countdowns</span><span class="settings-value">›</span></div>
+      <div class="settings-row" id="lockRow">
+        <span class="settings-label">app lock</span>
+        <span class="settings-value" id="lockValue">—</span>
+      </div>
       <div class="settings-row" id="notifyRow">
         <span class="settings-label">notifications</span>
         <span class="settings-value" id="notifyValue">—</span>
@@ -962,7 +1009,7 @@ const HTML = `
       <div class="settings-row" id="logoutRow"><span class="settings-label" style="color: #ff95a5;">logout</span><span class="settings-value">›</span></div>
     </div>
     <div style="text-align: center; margin-top: 32px; color: var(--text-muted); font-size: 12px; font-family: 'Fraunces', serif; font-style: italic;">
-      ivolina v2.4.2 · made with love
+      ivolina v2.5.1 · made with love
     </div>
   </div>
 </div>
@@ -970,6 +1017,7 @@ const HTML = `
 <div class="modal-backdrop" id="modalBackdrop"></div>
 <div class="story-viewer" id="storyViewer"></div>
 <div class="editor-overlay" id="editorOverlay"></div>
+<div class="lock-screen" id="lockScreen"></div>
 <div class="toast" id="toast"></div>
 `;
 
@@ -1051,6 +1099,7 @@ async function checkPassword(who) {
     state.user = who;
     document.body.dataset.user = who;
     lsSet('session', who);
+    markUnlocked();
     closeModal();
     if (!state.profile[who] || !state.profile[who].name) {
       showScreen('setup');
@@ -1284,8 +1333,24 @@ function startCounters() {
   }, 1000);
 }
 
+function daysSince(date) {
+  return Math.floor((Date.now() - date.getTime()) / 86400000);
+}
+
 function updateCounters() {
   const e = elapsedFromStart();
+
+  const fcEl = document.getElementById('firstContactCount');
+  if (fcEl) {
+    const d = daysSince(FIRST_CONTACT);
+    fcEl.textContent = `${d} days`;
+    const sub = document.getElementById('firstContactSub');
+    if (sub) {
+      const beforeTogether = Math.max(0, Math.floor((RELATIONSHIP_START - FIRST_CONTACT) / 86400000));
+      sub.textContent = `${beforeTogether} days before we were us`;
+    }
+  }
+
   const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
   if (RELATIONSHIP_START > new Date()) {
     set('cYears', 0); set('cMonths', 0); set('cDays', 0); set('cHours', 0); set('cMins', 0); set('cSecs', 0);
@@ -1293,7 +1358,7 @@ function updateCounters() {
     set('cYears', e.years); set('cMonths', e.months); set('cDays', e.monthDays);
     set('cHours', e.hours); set('cMins', e.mins); set('cSecs', e.secs);
   }
-  const anniv = new Date('2027-05-08T00:00:00');
+  const anniv = ANNIVERSARY;
   const diff = anniv - new Date();
   if (diff > 0) {
     const days = Math.floor(diff / (1000 * 60 * 60 * 24));
@@ -2068,9 +2133,40 @@ async function purgeExpiredStories() {
   }
 }
 
+// Files from before v2.2.3 were left behind when a story expired. Once a day
+// we list what's actually in the stories folder and delete anything that no
+// longer has a row pointing at it.
+async function sweepOrphanStoryFiles() {
+  if (!supabase) return;
+  const today = new Date().toISOString().slice(0, 10);
+  if (lsGet('orphanSweep') === today) return;
+  lsSet('orphanSweep', today);
+  try {
+    const { data: files, error } = await supabase.storage
+      .from(STORAGE_BUCKET)
+      .list('stories', { limit: 500 });
+    if (error || !files || !files.length) return;
+
+    const { data: rows } = await supabase.from('stories').select('storage_path');
+    const alive = new Set((rows || []).map(r => r.storage_path).filter(Boolean));
+
+    const orphans = files
+      .map(f => `stories/${f.name}`)
+      .filter(p => !alive.has(p));
+
+    if (orphans.length) {
+      await supabase.storage.from(STORAGE_BUCKET).remove(orphans);
+      console.info(`cleaned up ${orphans.length} leftover story files`);
+    }
+  } catch (e) {
+    console.warn('sweepOrphanStoryFiles', e);
+  }
+}
+
 async function loadStories() {
   if (!supabase) return;
   await purgeExpiredStories();
+  sweepOrphanStoryFiles();   // not awaited — never hold up the screen
   const { data, error } = await supabase
     .from('stories')
     .select('*')
@@ -3977,6 +4073,409 @@ async function finishEditor() {
 }
 
 
+
+// ===============================================================
+// APP LOCK (v2.5)
+//
+// Face ID via a passkey. If Face ID fails or isn't set up, iOS falls
+// back to the device passcode by itself — that part is the system's
+// job, not ours. A PIN you choose is kept as a last resort for when
+// passkeys aren't available at all.
+//
+// This locks the screen on this device. It is not a server login:
+// someone who knows the address and opens the developer tools can
+// still reach the data. That's the next step, when you want it.
+// ===============================================================
+
+const LOCK_GRACE_MS = 2 * 60 * 1000;   // 2 minutes away before it re-locks
+const PIN_MAX_TRIES = 5;
+
+function lockEnabled() {
+  return lsGet('lock:on') === '1';
+}
+
+function passkeySupported() {
+  return typeof window.PublicKeyCredential !== 'undefined'
+    && !!(navigator.credentials && navigator.credentials.create);
+}
+
+function b64url(buf) {
+  const bytes = new Uint8Array(buf);
+  let s = '';
+  for (let i = 0; i < bytes.length; i++) s += String.fromCharCode(bytes[i]);
+  return btoa(s).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+function fromB64url(str) {
+  const s = str.replace(/-/g, '+').replace(/_/g, '/');
+  const bin = atob(s + '='.repeat((4 - s.length % 4) % 4));
+  const out = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+  return out;
+}
+
+function randomBytes(n) {
+  const a = new Uint8Array(n);
+  crypto.getRandomValues(a);
+  return a;
+}
+
+async function hashPin(pin, salt) {
+  const data = new TextEncoder().encode(salt + ':' + pin);
+  const digest = await crypto.subtle.digest('SHA-256', data);
+  return b64url(digest);
+}
+
+// ---- setting it up ----
+async function createPasskey() {
+  const cred = await navigator.credentials.create({
+    publicKey: {
+      challenge: randomBytes(32),
+      rp: { name: 'ivolina', id: window.location.hostname },
+      user: {
+        id: new TextEncoder().encode('ivolina-' + state.user),
+        name: state.user,
+        displayName: state.profile[state.user]?.name || state.user,
+      },
+      pubKeyCredParams: [{ type: 'public-key', alg: -7 }, { type: 'public-key', alg: -257 }],
+      authenticatorSelection: {
+        authenticatorAttachment: 'platform',   // Face ID / Touch ID on this device
+        userVerification: 'required',
+        residentKey: 'preferred',
+      },
+      timeout: 60000,
+      attestation: 'none',
+    },
+  });
+  if (!cred) throw new Error('no credential');
+  lsSet('lock:credId', b64url(cred.rawId));
+  return true;
+}
+
+async function verifyPasskey() {
+  const stored = lsGet('lock:credId');
+  const opts = {
+    challenge: randomBytes(32),
+    rpId: window.location.hostname,
+    userVerification: 'required',
+    timeout: 60000,
+  };
+  if (stored) opts.allowCredentials = [{ type: 'public-key', id: fromB64url(stored) }];
+  const assertion = await navigator.credentials.get({ publicKey: opts });
+  return !!assertion;
+}
+
+function markUnlocked() {
+  lsSet('lock:lastOk', String(Date.now()));
+}
+
+function withinGrace() {
+  const last = parseInt(lsGet('lock:lastOk') || '0', 10);
+  return last > 0 && (Date.now() - last) < LOCK_GRACE_MS;
+}
+
+// ---- the lock screen ----
+function showLockScreen() {
+  const el = document.getElementById('lockScreen');
+  if (!el) return;
+  const hasPasskey = !!lsGet('lock:credId');
+  const name = state.profile[state.user]?.name || '';
+
+  el.innerHTML = `
+    <div class="lock-inner">
+      <div class="lock-mark"><span>ivolina</span></div>
+      <div class="lock-name">${escapeHtml(name)}</div>
+      <div class="lock-msg" id="lockMsg">locked</div>
+
+      ${hasPasskey ? '<button class="btn btn-primary lock-btn" id="lockFace">unlock with Face ID</button>' : ''}
+      <button class="btn btn-ghost lock-btn" id="lockUsePin">use PIN</button>
+
+      <div class="lock-pin" id="lockPinArea" style="display:none;">
+        <div class="pin-dots" id="pinDots"></div>
+        <div class="pin-pad" id="pinPad"></div>
+      </div>
+    </div>
+  `;
+  el.classList.add('active');
+
+  const face = document.getElementById('lockFace');
+  if (face) face.onclick = attemptPasskeyUnlock;
+  document.getElementById('lockUsePin').onclick = showPinPad;
+
+  // Offer Face ID straight away — one tap less.
+  if (hasPasskey) setTimeout(attemptPasskeyUnlock, 350);
+  else showPinPad();
+}
+
+function hideLockScreen() {
+  const el = document.getElementById('lockScreen');
+  if (!el) return;
+  el.classList.remove('active');
+  el.innerHTML = '';
+}
+
+async function attemptPasskeyUnlock() {
+  const msg = document.getElementById('lockMsg');
+  if (msg) msg.textContent = 'waiting for Face ID…';
+  try {
+    const ok = await verifyPasskey();
+    if (ok) {
+      markUnlocked();
+      hideLockScreen();
+      return;
+    }
+    if (msg) msg.textContent = 'that didn\u2019t work \u2014 try your PIN';
+  } catch (e) {
+    console.warn('passkey unlock', e && e.name);
+    if (msg) {
+      msg.textContent = e && e.name === 'NotAllowedError'
+        ? 'cancelled \u2014 try again or use your PIN'
+        : 'Face ID unavailable \u2014 use your PIN';
+    }
+    showPinPad();
+  }
+}
+
+let pinBuffer = '';
+
+function showPinPad() {
+  const area = document.getElementById('lockPinArea');
+  if (!area) return;
+  area.style.display = 'block';
+  pinBuffer = '';
+  renderPinDots();
+
+  const pad = document.getElementById('pinPad');
+  const keys = ['1','2','3','4','5','6','7','8','9','','0','del'];
+  pad.innerHTML = keys.map(k =>
+    k === '' ? '<div></div>'
+      : `<button class="pin-key" data-key="${k}">${k === 'del' ? '\u232B' : k}</button>`
+  ).join('');
+  pad.querySelectorAll('[data-key]').forEach(b => {
+    b.onclick = () => pressPin(b.dataset.key);
+  });
+}
+
+function renderPinDots() {
+  const dots = document.getElementById('pinDots');
+  if (!dots) return;
+  const len = parseInt(lsGet('lock:pinLen') || '4', 10);
+  dots.innerHTML = Array.from({ length: len }, (_, i) =>
+    `<span class="pin-dot ${i < pinBuffer.length ? 'on' : ''}"></span>`
+  ).join('');
+}
+
+async function pressPin(key) {
+  const len = parseInt(lsGet('lock:pinLen') || '4', 10);
+  if (key === 'del') {
+    pinBuffer = pinBuffer.slice(0, -1);
+    renderPinDots();
+    return;
+  }
+  if (pinBuffer.length >= len) return;
+  pinBuffer += key;
+  renderPinDots();
+  if (navigator.vibrate) navigator.vibrate(8);
+
+  if (pinBuffer.length === len) {
+    const salt = lsGet('lock:pinSalt') || '';
+    const hash = await hashPin(pinBuffer, salt);
+    const msg = document.getElementById('lockMsg');
+
+    if (hash === lsGet('lock:pinHash')) {
+      lsSet('lock:tries', '0');
+      markUnlocked();
+      hideLockScreen();
+      return;
+    }
+
+    const tries = parseInt(lsGet('lock:tries') || '0', 10) + 1;
+    lsSet('lock:tries', String(tries));
+    pinBuffer = '';
+    renderPinDots();
+
+    const dotsEl = document.getElementById('pinDots');
+    if (dotsEl) {
+      dotsEl.style.animation = 'none';
+      void dotsEl.offsetWidth;
+      dotsEl.style.animation = 'shake 0.35s';
+    }
+    if (navigator.vibrate) navigator.vibrate([30, 60, 30]);
+
+    if (tries >= PIN_MAX_TRIES) {
+      // Not a device wipe — just a pause, so guessing gets slow.
+      if (msg) msg.textContent = 'too many tries \u2014 wait a moment';
+      const pad = document.getElementById('pinPad');
+      if (pad) pad.style.pointerEvents = 'none';
+      setTimeout(() => {
+        lsSet('lock:tries', '0');
+        if (pad) pad.style.pointerEvents = '';
+        if (msg) msg.textContent = 'try again';
+      }, 30000);
+    } else if (msg) {
+      msg.textContent = `wrong PIN \u2014 ${PIN_MAX_TRIES - tries} left`;
+    }
+  }
+}
+
+// ---- turning it on and off, from settings ----
+async function openLockSettings() {
+  const on = lockEnabled();
+  const hasPasskey = !!lsGet('lock:credId');
+
+  if (on) {
+    showModal(`
+      <div class="modal-handle"></div>
+      <h2>app lock is on</h2>
+      <p style="text-align:left; line-height:1.6;">
+        ivolina asks for ${hasPasskey ? 'Face ID' : 'your PIN'} when you open it, and again
+        if you\u2019ve been away for more than two minutes.
+      </p>
+      ${hasPasskey ? '' : '<button class="btn btn-ghost" id="lockAddFace">add Face ID</button>'}
+      <button class="btn btn-ghost" id="lockChangePin">change PIN</button>
+      <button class="btn btn-danger" id="lockOff">turn off on this phone</button>
+      <button class="btn btn-ghost" id="lockCancel">close</button>
+    `);
+    const addFace = document.getElementById('lockAddFace');
+    if (addFace) addFace.onclick = async () => {
+      try {
+        await createPasskey();
+        toast('Face ID added');
+        closeModal();
+        renderSettings();
+      } catch (e) {
+        console.warn(e);
+        toast('could not set up Face ID here');
+      }
+    };
+    document.getElementById('lockChangePin').onclick = () => askForNewPin(false);
+    document.getElementById('lockOff').onclick = () => {
+      showConfirm('turn off the lock?', 'anyone with your phone could open ivolina.', () => {
+        lsSet('lock:on', '');
+        lsSet('lock:credId', '');
+        lsSet('lock:pinHash', '');
+        lsSet('lock:pinSalt', '');
+        renderSettings();
+        toast('app lock is off');
+      });
+    };
+    document.getElementById('lockCancel').onclick = closeModal;
+    return;
+  }
+
+  showModal(`
+    <div class="modal-handle"></div>
+    <h2>lock ivolina</h2>
+    <p style="text-align:left; line-height:1.6;">
+      Ask for Face ID when the app opens. If Face ID fails, your iPhone offers
+      its own passcode. You\u2019ll also set a PIN as a fallback.
+      <br><br>
+      This is set up per phone, so do it on hers too.
+    </p>
+    <button class="btn btn-primary" id="lockStart">set it up</button>
+    <button class="btn btn-ghost" id="lockCancel">not now</button>
+  `);
+  document.getElementById('lockStart').onclick = () => askForNewPin(true);
+  document.getElementById('lockCancel').onclick = closeModal;
+}
+
+function askForNewPin(thenPasskey) {
+  showModal(`
+    <div class="modal-handle"></div>
+    <h2>choose a PIN</h2>
+    <p>four to six digits, used if Face ID can\u2019t be</p>
+    <input type="password" inputmode="numeric" pattern="[0-9]*" id="pinNew" class="input" placeholder="new PIN" maxlength="6">
+    <input type="password" inputmode="numeric" pattern="[0-9]*" id="pinNew2" class="input" placeholder="repeat it" maxlength="6">
+    <button class="btn btn-primary" id="pinSave">save</button>
+    <button class="btn btn-ghost" id="pinCancel">cancel</button>
+  `);
+  setTimeout(() => document.getElementById('pinNew')?.focus(), 120);
+
+  document.getElementById('pinSave').onclick = async () => {
+    const a = document.getElementById('pinNew').value.trim();
+    const b = document.getElementById('pinNew2').value.trim();
+    if (!/^[0-9]{4,6}$/.test(a)) { toast('four to six digits please'); return; }
+    if (a !== b) { toast('the two do not match'); return; }
+
+    const salt = b64url(randomBytes(16));
+    lsSet('lock:pinSalt', salt);
+    lsSet('lock:pinHash', await hashPin(a, salt));
+    lsSet('lock:pinLen', String(a.length));
+    lsSet('lock:on', '1');
+    lsSet('lock:tries', '0');
+    markUnlocked();
+
+    if (!thenPasskey) {
+      closeModal();
+      renderSettings();
+      toast('PIN updated');
+      return;
+    }
+
+    if (!passkeySupported()) {
+      closeModal();
+      renderSettings();
+      toast('lock is on \u2014 Face ID is not available here');
+      return;
+    }
+
+    showModal(`
+      <div class="modal-handle"></div>
+      <h2>add Face ID</h2>
+      <p style="text-align:left; line-height:1.6;">
+        Your iPhone will ask to confirm. After this, opening ivolina just needs a look.
+      </p>
+      <button class="btn btn-primary" id="faceGo">turn on Face ID</button>
+      <button class="btn btn-ghost" id="faceSkip">PIN only for now</button>
+    `);
+    document.getElementById('faceGo').onclick = async () => {
+      try {
+        await createPasskey();
+        markUnlocked();
+        closeModal();
+        renderSettings();
+        toast('app lock is on');
+      } catch (e) {
+        console.warn('passkey setup', e && e.name);
+        closeModal();
+        renderSettings();
+        toast('lock is on with your PIN \u2014 Face ID did not set up');
+      }
+    };
+    document.getElementById('faceSkip').onclick = () => {
+      closeModal();
+      renderSettings();
+      toast('app lock is on');
+    };
+  };
+  document.getElementById('pinCancel').onclick = closeModal;
+}
+
+// ---- re-lock after being away ----
+function startLockWatcher() {
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') {
+      lsSet('lock:hiddenAt', String(Date.now()));
+      return;
+    }
+    if (!lockEnabled() || !state.user) return;
+    const hiddenAt = parseInt(lsGet('lock:hiddenAt') || '0', 10);
+    if (hiddenAt && Date.now() - hiddenAt >= LOCK_GRACE_MS) {
+      showLockScreen();
+    } else {
+      markUnlocked();
+    }
+  });
+}
+
+function maybeLockOnStart() {
+  if (!lockEnabled() || !state.user) return false;
+  if (withinGrace()) return false;
+  showLockScreen();
+  return true;
+}
+
+
 // ----- SETTINGS -----
 function renderSettings() {
   const me = state.user;
@@ -3986,6 +4485,13 @@ function renderSettings() {
   else avatarEl.textContent = me === 'ivo' ? 'I' : 'N';
   document.getElementById('settingsNameValue').textContent = p?.name || '—';
   document.getElementById('settingsUserValue').textContent = me === 'ivo' ? 'Ivo (blue)' : 'Nikolina (pink)';
+
+  const lv = document.getElementById('lockValue');
+  if (lv) {
+    lv.textContent = lockEnabled()
+      ? (lsGet('lock:credId') ? 'Face ID + PIN ›' : 'PIN ›')
+      : 'off ›';
+  }
 
   const nv = document.getElementById('notifyValue');
   if (nv) {
@@ -4247,6 +4753,7 @@ function wireEvents() {
   document.getElementById('settingsAvatarBtn').onclick = () => document.getElementById('settingsAvatarFile').click();
   document.getElementById('settingsAvatarFile').onchange = handleSettingsAvatar;
   document.getElementById('changeNameRow').onclick = changeName;
+  document.getElementById('lockRow').onclick = openLockSettings;
   document.getElementById('notifyRow').onclick = openNotificationSettings;
   document.getElementById('resetCoinsRow').onclick = resetCoins;
   document.getElementById('logoutRow').onclick = logout;
@@ -4315,8 +4822,11 @@ export function boot() {
       const p = state.profile[session];
       if (!p || !p.name) showScreen('setup');
       else showScreen('home');
+      maybeLockOnStart();
+      startLockWatcher();
     } else {
       showScreen('login');
+      startLockWatcher();
     }
   })();
 }
