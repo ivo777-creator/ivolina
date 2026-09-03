@@ -1,5 +1,5 @@
 // ===============================================================
-// IVOLINA v2.5.1 — app lock, story cleanup, two relationship dates
+// IVOLINA v2.6 — Aurora: light/dark, iOS type, coloured questions, motion
 // ===============================================================
 import { createClient } from '@supabase/supabase-js';
 
@@ -307,43 +307,120 @@ const state = {
 // CSS (unchanged from v1 + small additions for avatars, chat)
 // ===============================================================
 const CSS = `
+/* ---------------------------------------------------------------
+   Aurora — one set of variables, two skins.
+   Dark is the default; light comes from the iPhone's own setting
+   or from Settings, and is applied as data-theme on <html>.
+   --------------------------------------------------------------- */
 :root {
+  /* The two of you. Dark-mode values. */
   --ivo: #7BC4F5;
   --ivo-soft: #4A9FE0;
   --niki: #F4A8C8;
   --niki-soft: #E07AAB;
+
   --accent: var(--ivo);
   --accent-soft: var(--ivo-soft);
-  --bg-0: #0A0612;
-  --bg-1: #14101F;
-  --bg-2: #1E1830;
-  --text: #F5F0FF;
-  --text-dim: #B8B0CC;
-  --text-muted: #7A7290;
-  --glass: rgba(30, 24, 48, 0.65);
-  --glass-border: rgba(255, 255, 255, 0.08);
+
+  --bg-0: #07060B;
+  --bg-1: #0D0B14;
+  --bg-2: #16131F;
+
+  --text: #FFFFFF;
+  --text-dim: #A49DB4;
+  --text-muted: #77718A;
+
+  --card: rgba(255, 255, 255, 0.055);
+  --card-hover: rgba(255, 255, 255, 0.085);
+  --glass: rgba(255, 255, 255, 0.055);
+  --glass-border: rgba(255, 255, 255, 0.09);
+  --hairline: rgba(255, 255, 255, 0.07);
+
+  --aurora-1: rgba(123, 196, 245, 0.30);
+  --aurora-2: rgba(244, 168, 200, 0.22);
+  --on-accent: #07060B;
+
+  --r-card: 16px;
+  --r-pill: 100px;
+  --dur: 0.32s;
+  --ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-spring: cubic-bezier(0.34, 1.4, 0.5, 1);
 }
+
+/* Light. Same blue, same pink — deepened so they hold on white. */
+html[data-theme="light"] {
+  --ivo: #3B8ECE;
+  --ivo-soft: #2C6FA8;
+  --niki: #D9689B;
+  --niki-soft: #B54B7C;
+
+  --bg-0: #FDFCFF;
+  --bg-1: #F6F3FA;
+  --bg-2: #FFFFFF;
+
+  --text: #151220;
+  --text-dim: #5C5668;
+  --text-muted: #8A8398;
+
+  --card: rgba(255, 255, 255, 0.85);
+  --card-hover: #FFFFFF;
+  --glass: rgba(255, 255, 255, 0.85);
+  --glass-border: rgba(21, 18, 32, 0.09);
+  --hairline: rgba(21, 18, 32, 0.07);
+
+  --aurora-1: rgba(123, 196, 245, 0.34);
+  --aurora-2: rgba(244, 168, 200, 0.26);
+  --on-accent: #FFFFFF;
+}
+
 body[data-user="nikolina"] {
   --accent: var(--niki);
   --accent-soft: var(--niki-soft);
 }
+
 * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; -webkit-touch-callout: none; }
 html, body { overscroll-behavior: none; overflow-x: hidden; }
+
 body {
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-  background: var(--bg-0); color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'SF Pro Text', system-ui, sans-serif;
+  background: var(--bg-0);
+  color: var(--text);
   min-height: 100vh; min-height: 100dvh;
-  background-image:
-    radial-gradient(ellipse 80% 50% at 50% -10%, color-mix(in srgb, var(--accent) 18%, transparent), transparent),
-    radial-gradient(ellipse 60% 40% at 80% 110%, color-mix(in srgb, var(--accent) 12%, transparent), transparent),
-    linear-gradient(180deg, var(--bg-0) 0%, var(--bg-1) 100%);
-  background-attachment: fixed;
   -webkit-font-smoothing: antialiased;
-  transition: background 0.6s ease;
+  letter-spacing: -0.01em;
   user-select: none; -webkit-user-select: none;
+  transition: background-color 0.45s ease, color 0.45s ease;
 }
+
+/* The aurora itself: one light source, both colours, fixed to the top. */
+body::before {
+  content: '';
+  position: fixed;
+  top: 0; left: 0; right: 0;
+  height: 46vh;
+  background: linear-gradient(160deg, var(--aurora-1), var(--aurora-2) 55%, transparent);
+  pointer-events: none;
+  z-index: -1;
+  transition: opacity 0.45s ease;
+}
+body::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background: linear-gradient(180deg, transparent 40%, var(--bg-0) 88%);
+  pointer-events: none;
+  z-index: -1;
+}
+
+/* Numbers that should read as numbers, not as decoration. */
+.numeral {
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.045em;
+  font-weight: 600;
+}
+
 input, textarea { -webkit-user-select: text; user-select: text; }
-.display { font-family: 'Fraunces', Georgia, serif; font-weight: 400; letter-spacing: -0.02em; }
+.display { font-weight: 600; letter-spacing: -0.035em; }
 .screen { display: none; min-height: 100vh; min-height: 100dvh; padding: env(safe-area-inset-top, 0) 0 env(safe-area-inset-bottom, 0); animation: fadeIn 0.5s cubic-bezier(0.16,1,0.3,1); }
 .screen.active { display: block; }
 @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
@@ -355,62 +432,72 @@ input, textarea { -webkit-user-select: text; user-select: text; }
 #screen-login { display: none; flex-direction: column; align-items: center; justify-content: center; padding: 40px 24px; text-align: center; }
 #screen-login.active { display: flex; }
 .login-title { font-size: 56px; line-height: 1; margin-bottom: 8px; background: linear-gradient(135deg, #7BC4F5 0%, #F4A8C8 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
-.login-subtitle { color: var(--text-dim); font-size: 15px; margin-bottom: 64px; font-style: italic; font-family: 'Fraunces', serif; }
+.login-subtitle { color: var(--text-dim); font-size: 15px; margin-bottom: 64px;  }
 .login-cards { display: flex; flex-direction: column; gap: 20px; width: 100%; max-width: 360px; }
 .login-card { background: var(--glass); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); border: 1px solid var(--glass-border); border-radius: 28px; padding: 32px 24px; display: flex; align-items: center; gap: 20px; cursor: pointer; transition: transform 0.3s cubic-bezier(0.16,1,0.3,1); position: relative; overflow: hidden; }
 .login-card::before { content: ''; position: absolute; inset: 0; background: radial-gradient(circle at 30% 30%, var(--card-color) 0%, transparent 60%); opacity: 0.18; pointer-events: none; }
 .login-card:active { transform: scale(0.97); }
 .login-card.ivo { --card-color: #7BC4F5; }
 .login-card.niki { --card-color: #F4A8C8; }
-.login-avatar { width: 64px; height: 64px; border-radius: 50%; background: linear-gradient(135deg, var(--card-color), color-mix(in srgb, var(--card-color) 40%, #000)); display: flex; align-items: center; justify-content: center; font-family: 'Fraunces', serif; font-size: 28px; color: white; box-shadow: 0 8px 24px color-mix(in srgb, var(--card-color) 30%, transparent); flex-shrink: 0; }
+.login-avatar { width: 64px; height: 64px; border-radius: 50%; background: linear-gradient(135deg, var(--card-color), color-mix(in srgb, var(--card-color) 40%, #000)); display: flex; align-items: center; justify-content: center;  font-size: 28px; color: white; box-shadow: 0 8px 24px color-mix(in srgb, var(--card-color) 30%, transparent); flex-shrink: 0; }
 .login-card-text { text-align: left; flex: 1; }
-.login-name { font-family: 'Fraunces', serif; font-size: 24px; font-weight: 500; }
+.login-name {  font-size: 24px; font-weight: 500; }
 .login-hint { font-size: 13px; color: var(--text-muted); margin-top: 2px; }
 
 .modal-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,0.7); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); display: none; align-items: flex-end; justify-content: center; z-index: 500; animation: fadeIn 0.3s ease; }
 .modal-backdrop.active { display: flex; }
 @media (min-width: 500px) { .modal-backdrop { align-items: center; } }
-.modal { background: var(--bg-2); border: 1px solid var(--glass-border); border-radius: 32px 32px 0 0; padding: 32px 24px calc(32px + env(safe-area-inset-bottom)); width: 100%; max-width: 480px; animation: slideUp 0.4s cubic-bezier(0.16,1,0.3,1); max-height: 90vh; overflow-y: auto; }
+.modal { background: var(--bg-2); box-shadow: 0 -12px 48px rgba(0,0,0,0.35); border: 1px solid var(--glass-border); border-radius: 32px 32px 0 0; padding: 32px 24px calc(32px + env(safe-area-inset-bottom)); width: 100%; max-width: 480px; animation: slideUp 0.4s cubic-bezier(0.16,1,0.3,1); max-height: 90vh; overflow-y: auto; }
 @media (min-width: 500px) { .modal { border-radius: 32px; margin: 20px; } }
 .modal-handle { width: 40px; height: 4px; background: rgba(255,255,255,0.2); border-radius: 2px; margin: 0 auto 24px; }
-.modal h2 { font-family: 'Fraunces', serif; font-size: 26px; margin-bottom: 8px; text-align: center; }
+.modal h2 {  font-size: 26px; margin-bottom: 8px; text-align: center; }
 .modal p { color: var(--text-dim); font-size: 14px; text-align: center; margin-bottom: 24px; }
 .input { width: 100%; background: rgba(255,255,255,0.05); border: 1px solid var(--glass-border); border-radius: 16px; padding: 16px 18px; color: var(--text); font-size: 16px; font-family: inherit; margin-bottom: 16px; }
 .input:focus { outline: none; border-color: var(--accent); background: rgba(255,255,255,0.08); }
 textarea.input { resize: none; min-height: 100px; line-height: 1.5; }
-.btn { width: 100%; border: none; border-radius: 16px; padding: 16px; font-size: 16px; font-weight: 600; font-family: inherit; cursor: pointer; transition: transform 0.2s; margin-bottom: 12px; }
+.btn { width: 100%; border: none; border-radius: 14px; padding: 15px; font-size: 16px; font-weight: 600; font-family: inherit; cursor: pointer; transition: transform 0.2s var(--ease-spring), background 0.2s; margin-bottom: 10px; letter-spacing: -0.01em; }
 .btn:active { transform: scale(0.97); }
-.btn-primary { background: linear-gradient(135deg, var(--accent), var(--accent-soft)); color: #0A0612; box-shadow: 0 8px 24px color-mix(in srgb, var(--accent) 30%, transparent); }
+.btn-primary { background: var(--accent); color: var(--on-accent); font-weight: 600; }
 .btn-ghost { background: rgba(255,255,255,0.05); color: var(--text); border: 1px solid var(--glass-border); }
 .btn-danger { background: rgba(255,90,110,0.15); color: #ff95a5; border: 1px solid rgba(255,90,110,0.3); }
 
 .app-header { padding: calc(env(safe-area-inset-top) + 16px) 20px 16px; display: flex; align-items: center; gap: 12px; }
 .back-btn { width: 40px; height: 40px; border-radius: 50%; background: var(--glass); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); border: 1px solid var(--glass-border); display: flex; align-items: center; justify-content: center; cursor: pointer; font-size: 20px; color: var(--text); }
-.app-header h1 { font-family: 'Fraunces', serif; font-weight: 500; font-size: 22px; flex: 1; }
+.app-header h1 {  font-weight: 500; font-size: 22px; flex: 1; }
 .app-content { padding: 8px 20px 100px; }
 
 /* NEW: home header with avatar */
 .home-hero { padding: 12px 4px 28px; display: flex; align-items: center; gap: 16px; }
-.home-hero-avatar { width: 64px; height: 64px; border-radius: 50%; background: linear-gradient(135deg, var(--accent), var(--accent-soft)); display: flex; align-items: center; justify-content: center; font-family: 'Fraunces', serif; font-size: 28px; color: white; overflow: hidden; flex-shrink: 0; box-shadow: 0 8px 24px color-mix(in srgb, var(--accent) 30%, transparent); cursor: pointer; }
+.home-hero-avatar { width: 64px; height: 64px; border-radius: 50%; background: linear-gradient(135deg, var(--accent), var(--accent-soft)); display: flex; align-items: center; justify-content: center;  font-size: 28px; color: white; overflow: hidden; flex-shrink: 0; box-shadow: 0 8px 24px color-mix(in srgb, var(--accent) 30%, transparent); cursor: pointer; }
 .home-hero-avatar img { width: 100%; height: 100%; object-fit: cover; }
 .home-hero-text { flex: 1; min-width: 0; }
 .greeting { font-size: 13px; color: var(--text-dim); margin-bottom: 2px; }
-.greeting-name { font-family: 'Fraunces', serif; font-size: 30px; font-weight: 400; line-height: 1.1; background: linear-gradient(135deg, var(--accent) 0%, color-mix(in srgb, var(--accent) 60%, #fff) 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
-.greeting-sub { font-family: 'Fraunces', serif; font-style: italic; color: var(--text-dim); font-size: 13px; margin-top: 4px; }
+.greeting-name {  font-size: 30px; font-weight: 400; line-height: 1.1; background: linear-gradient(135deg, var(--accent) 0%, color-mix(in srgb, var(--accent) 60%, #fff) 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
+.greeting-sub { font-weight: 400; color: var(--text-dim); font-size: 13px; margin-top: 4px; }
 
-.coins-bar { display: flex; align-items: center; justify-content: space-between; background: var(--glass); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); border: 1px solid var(--glass-border); border-radius: 20px; padding: 14px 18px; margin-bottom: 24px; }
+.coins-bar { display: flex; align-items: center; justify-content: space-between; background: var(--card); backdrop-filter: blur(24px); -webkit-backdrop-filter: blur(24px); border: 0.5px solid var(--glass-border); border-radius: var(--r-card); padding: 13px 16px; margin-bottom: 18px; }
 .coins-display { display: flex; align-items: center; gap: 8px; font-weight: 600; }
 .coin-icon { width: 28px; height: 28px; border-radius: 50%; background: linear-gradient(135deg, #ffd56b, #f5a623); display: flex; align-items: center; justify-content: center; font-size: 14px; box-shadow: 0 2px 8px rgba(245,166,35,0.3); }
-.checkin-btn { background: linear-gradient(135deg, var(--accent), var(--accent-soft)); color: #0A0612; border: none; border-radius: 12px; padding: 8px 14px; font-weight: 600; font-size: 13px; cursor: pointer; font-family: inherit; }
+.checkin-btn { background: var(--accent); color: var(--on-accent); border: none; border-radius: 12px; padding: 8px 14px; font-weight: 600; font-size: 13px; cursor: pointer; font-family: inherit; }
 .checkin-btn:disabled { opacity: 0.5; cursor: default; }
 
 .feature-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
-.feature-card { background: var(--glass); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); border: 1px solid var(--glass-border); border-radius: 24px; padding: 20px; cursor: pointer; aspect-ratio: 1; display: flex; flex-direction: column; justify-content: space-between; position: relative; overflow: hidden; transition: transform 0.3s cubic-bezier(0.16,1,0.3,1); }
-.feature-card:active { transform: scale(0.96); }
-.feature-card::before { content: ''; position: absolute; inset: 0; background: radial-gradient(circle at 80% 20%, var(--accent) 0%, transparent 60%); opacity: 0.12; pointer-events: none; }
+.feature-card {
+  background: var(--card);
+  backdrop-filter: blur(24px); -webkit-backdrop-filter: blur(24px);
+  border: 0.5px solid var(--glass-border);
+  border-radius: var(--r-card);
+  padding: 18px; cursor: pointer; aspect-ratio: 1;
+  display: flex; flex-direction: column; justify-content: space-between;
+  position: relative; overflow: hidden;
+  transition: transform var(--dur) var(--ease-spring), background var(--dur) var(--ease);
+}
+.feature-card:active { background: var(--card-hover); }
+.feature-card:active { transform: scale(0.965); }
+
 .feature-icon { font-size: 28px; line-height: 1; }
-.feature-title { font-family: 'Fraunces', serif; font-size: 19px; font-weight: 500; line-height: 1.2; }
-.feature-sub { color: var(--text-dim); font-size: 12px; margin-top: 4px; }
+.feature-title {  font-size: 19px; font-weight: 500; line-height: 1.2; }
+.feature-sub { color: var(--text-dim); font-size: 12px; margin-top: 3px; letter-spacing: -0.005em; }
 .feature-card.full { grid-column: 1 / -1; aspect-ratio: auto; padding: 24px; min-height: 130px; }
 .feature-card.full .feature-title { font-size: 22px; }
 
@@ -424,26 +511,26 @@ textarea.input { resize: none; min-height: 100px; line-height: 1.5; }
 .feature-card.questions-preview { grid-column: 1 / -1; aspect-ratio: auto; padding: 22px; min-height: 160px; }
 .questions-preview-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
 .questions-preview-list { display: flex; flex-direction: column; gap: 6px; }
-.questions-preview-item { font-family: 'Fraunces', serif; font-style: italic; font-size: 13px; color: var(--text-dim); padding: 6px 10px; background: rgba(255,255,255,0.03); border-radius: 10px; border-left: 2px solid var(--accent); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; animation: fadeIn 0.6s ease; }
+.questions-preview-item { font-weight: 400; font-size: 13px; color: var(--text-dim); padding: 6px 10px; background: rgba(255,255,255,0.03); border-radius: 10px; border-left: 2px solid var(--accent); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; animation: fadeIn 0.6s ease; }
 
-.counter-card { background: var(--glass); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); border: 1px solid var(--glass-border); border-radius: 28px; padding: 28px 20px; text-align: center; margin-bottom: 20px; position: relative; overflow: hidden; }
-.counter-card::before { content: ''; position: absolute; inset: 0; background: radial-gradient(circle at 50% 0%, var(--accent) 0%, transparent 70%); opacity: 0.15; pointer-events: none; }
-.counter-label { font-family: 'Fraunces', serif; font-style: italic; color: var(--text-dim); font-size: 14px; margin-bottom: 12px; }
+.counter-card { background: var(--card); backdrop-filter: blur(24px); -webkit-backdrop-filter: blur(24px); border: 0.5px solid var(--glass-border); border-radius: 20px; padding: 24px 18px; text-align: center; margin-bottom: 14px; position: relative; overflow: hidden; }
+
+.counter-label { font-weight: 400; color: var(--text-dim); font-size: 14px; margin-bottom: 12px; }
 .counter-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 8px; }
-.counter-unit { background: rgba(255,255,255,0.04); border-radius: 14px; padding: 12px 4px; }
-.counter-num { font-family: 'Fraunces', serif; font-size: 26px; font-weight: 500; background: linear-gradient(135deg, var(--accent), color-mix(in srgb, var(--accent) 60%, #fff)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; line-height: 1; }
+.counter-unit { background: var(--hairline); border-radius: 13px; padding: 12px 4px; }
+.counter-num {  font-size: 26px; font-weight: 500; background: linear-gradient(135deg, var(--accent), color-mix(in srgb, var(--accent) 60%, #fff)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; line-height: 1; }
 .counter-name { font-size: 10px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.1em; margin-top: 4px; }
 
-.event-card { background: var(--glass); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); border: 1px solid var(--glass-border); border-radius: 20px; padding: 16px 18px; margin-bottom: 12px; display: flex; align-items: center; gap: 14px; }
+.event-card { background: var(--card); backdrop-filter: blur(24px); -webkit-backdrop-filter: blur(24px); border: 0.5px solid var(--glass-border); border-radius: var(--r-card); padding: 15px 16px; margin-bottom: 10px; display: flex; align-items: center; gap: 13px; }
 .event-emoji { font-size: 28px; width: 48px; height: 48px; background: rgba(255,255,255,0.05); border-radius: 14px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
 .event-info { flex: 1; min-width: 0; }
-.event-title { font-family: 'Fraunces', serif; font-size: 17px; font-weight: 500; margin-bottom: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.event-title {  font-size: 17px; font-weight: 500; margin-bottom: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .event-countdown { font-size: 12px; color: var(--accent); font-weight: 500; }
 .event-date { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
 .event-delete { background: none; border: none; color: var(--text-muted); font-size: 20px; cursor: pointer; padding: 8px; }
 
-.section-title { font-family: 'Fraunces', serif; font-size: 20px; font-weight: 500; margin: 24px 0 14px; display: flex; align-items: center; justify-content: space-between; }
-.add-btn { background: var(--accent); color: #0A0612; border: none; border-radius: 12px; padding: 6px 12px; font-size: 13px; font-weight: 600; cursor: pointer; font-family: inherit; }
+.section-title {  font-size: 20px; font-weight: 500; margin: 24px 0 14px; display: flex; align-items: center; justify-content: space-between; }
+.add-btn { background: var(--accent); color: var(--on-accent); border: none; border-radius: 12px; padding: 6px 12px; font-size: 13px; font-weight: 600; cursor: pointer; font-family: inherit; }
 
 .question-card { background: var(--glass); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); border: 1px solid var(--glass-border); border-radius: 22px; padding: 20px; margin-bottom: 14px; cursor: pointer; transition: transform 0.2s; }
 .question-card:active { transform: scale(0.98); }
@@ -451,7 +538,7 @@ textarea.input { resize: none; min-height: 100px; line-height: 1.5; }
 .asker-dot { width: 8px; height: 8px; border-radius: 50%; }
 .asker-dot.ivo { background: var(--ivo); }
 .asker-dot.niki { background: var(--niki); }
-.question-text { font-family: 'Fraunces', serif; font-size: 17px; line-height: 1.4; margin-bottom: 12px; }
+.question-text {  font-size: 17px; line-height: 1.4; margin-bottom: 12px; }
 .question-status { display: flex; gap: 8px; margin-top: 12px; }
 .status-pill { font-size: 11px; padding: 4px 10px; border-radius: 100px; font-weight: 500; }
 .status-pill.answered { background: rgba(100,220,150,0.15); color: #7ee0a5; }
@@ -459,22 +546,22 @@ textarea.input { resize: none; min-height: 100px; line-height: 1.5; }
 
 .filter-tabs { display: flex; gap: 8px; margin-bottom: 16px; overflow-x: auto; -webkit-overflow-scrolling: touch; padding: 4px 0; }
 .filter-tab { background: var(--glass); border: 1px solid var(--glass-border); color: var(--text-dim); padding: 8px 14px; border-radius: 100px; font-size: 13px; font-weight: 500; cursor: pointer; white-space: nowrap; font-family: inherit; }
-.filter-tab.active { background: var(--accent); color: #0A0612; border-color: var(--accent); }
+.filter-tab.active { background: var(--accent); color: var(--on-accent); border-color: var(--accent); font-weight: 600; }
 
 /* NEW: avatars next to question/answer */
-.tiny-avatar { width: 28px; height: 28px; border-radius: 50%; background: linear-gradient(135deg, var(--avc, var(--accent)), var(--accent-soft)); display: inline-flex; align-items: center; justify-content: center; font-family: 'Fraunces', serif; font-size: 12px; color: white; overflow: hidden; flex-shrink: 0; }
+.tiny-avatar { width: 28px; height: 28px; border-radius: 50%; background: linear-gradient(135deg, var(--avc, var(--accent)), var(--accent-soft)); display: inline-flex; align-items: center; justify-content: center;  font-size: 12px; color: white; overflow: hidden; flex-shrink: 0; }
 .tiny-avatar img { width: 100%; height: 100%; object-fit: cover; }
 .tiny-avatar.ivo { --avc: var(--ivo); }
 .tiny-avatar.niki { --avc: var(--niki); }
-.med-avatar { width: 36px; height: 36px; border-radius: 50%; background: linear-gradient(135deg, var(--avc, var(--accent)), var(--accent-soft)); display: inline-flex; align-items: center; justify-content: center; font-family: 'Fraunces', serif; font-size: 14px; color: white; overflow: hidden; flex-shrink: 0; }
+.med-avatar { width: 36px; height: 36px; border-radius: 50%; background: linear-gradient(135deg, var(--avc, var(--accent)), var(--accent-soft)); display: inline-flex; align-items: center; justify-content: center;  font-size: 14px; color: white; overflow: hidden; flex-shrink: 0; }
 .med-avatar img { width: 100%; height: 100%; object-fit: cover; }
 .med-avatar.ivo { --avc: var(--ivo); }
 .med-avatar.niki { --avc: var(--niki); }
 
 .answer-block { background: rgba(255,255,255,0.04); border-radius: 18px; padding: 16px 18px; margin-bottom: 12px; border-left: 3px solid var(--accent); }
 .answer-author { font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 6px; display: flex; align-items: center; gap: 8px; }
-.answer-text { font-family: 'Fraunces', serif; font-size: 16px; line-height: 1.5; }
-.locked-block { text-align: center; padding: 24px; color: var(--text-muted); font-style: italic; font-family: 'Fraunces', serif; }
+.answer-text {  font-size: 16px; line-height: 1.5; }
+.locked-block { text-align: center; padding: 24px; color: var(--text-muted);  }
 .preset-list { max-height: 46vh; overflow-y: auto; -webkit-overflow-scrolling: touch; margin-bottom: 16px; border-radius: 16px; background: rgba(255,255,255,0.03); }
 .preset-item { padding: 14px 16px; border-bottom: 1px solid var(--glass-border); cursor: pointer; font-size: 14px; line-height: 1.4; display: flex; align-items: flex-start; gap: 10px; }
 .preset-item:active { background: rgba(255,255,255,0.06); }
@@ -486,8 +573,8 @@ textarea.input { resize: none; min-height: 100px; line-height: 1.5; }
 .cat-chips { display: flex; gap: 8px; overflow-x: auto; -webkit-overflow-scrolling: touch; padding: 2px 0 12px; margin: 0 -4px; scrollbar-width: none; }
 .cat-chips::-webkit-scrollbar { display: none; }
 .cat-chip { background: rgba(255,255,255,0.05); border: 1px solid var(--glass-border); color: var(--text-dim); padding: 8px 14px; border-radius: 100px; font-size: 13px; font-weight: 500; cursor: pointer; white-space: nowrap; font-family: inherit; flex-shrink: 0; }
-.cat-chip.active { background: var(--accent); color: #0A0612; border-color: var(--accent); }
-.preset-count { text-align: center; font-size: 12px; color: var(--text-muted); margin-bottom: 12px; font-family: 'Fraunces', serif; font-style: italic; }
+.cat-chip.active { background: var(--accent); color: var(--on-accent); border-color: var(--accent); font-weight: 600; }
+.preset-count { text-align: center; font-size: 12px; color: var(--text-muted); margin-bottom: 12px; font-weight: 400; }
 
 .canvas-wrap { aspect-ratio: 1; background: #fff; border-radius: 20px; overflow: hidden; margin-bottom: 16px; touch-action: none; position: relative; }
 #drawCanvas { width: 100%; height: 100%; display: block; touch-action: none; }
@@ -501,20 +588,20 @@ textarea.input { resize: none; min-height: 100px; line-height: 1.5; }
 .gallery-item img { width: 100%; height: 100%; object-fit: cover; }
 .gallery-item-meta { position: absolute; bottom: 0; left: 0; right: 0; background: linear-gradient(transparent, rgba(0,0,0,0.6)); padding: 8px; font-size: 10px; color: white; display: flex; justify-content: space-between; }
 
-.settings-section { background: var(--glass); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); border: 1px solid var(--glass-border); border-radius: 20px; margin-bottom: 16px; overflow: hidden; }
-.settings-row { padding: 16px 18px; border-bottom: 1px solid var(--glass-border); display: flex; align-items: center; justify-content: space-between; cursor: pointer; }
+.settings-section { background: var(--card); backdrop-filter: blur(24px); -webkit-backdrop-filter: blur(24px); border: 0.5px solid var(--glass-border); border-radius: var(--r-card); margin-bottom: 14px; overflow: hidden; }
+.settings-row { padding: 15px 17px; border-bottom: 0.5px solid var(--hairline); display: flex; align-items: center; justify-content: space-between; cursor: pointer; }
 .settings-row:last-child { border-bottom: none; }
 .settings-label { font-size: 15px; }
 .settings-value { color: var(--text-dim); font-size: 14px; }
-.avatar-display { width: 88px; height: 88px; border-radius: 50%; margin: 8px auto 16px; background: linear-gradient(135deg, var(--accent), var(--accent-soft)); display: flex; align-items: center; justify-content: center; font-family: 'Fraunces', serif; font-size: 36px; color: white; overflow: hidden; position: relative; box-shadow: 0 8px 32px color-mix(in srgb, var(--accent) 40%, transparent); }
+.avatar-display { width: 88px; height: 88px; border-radius: 50%; margin: 8px auto 16px; background: linear-gradient(135deg, var(--accent), var(--accent-soft)); display: flex; align-items: center; justify-content: center;  font-size: 36px; color: white; overflow: hidden; position: relative; box-shadow: 0 8px 32px color-mix(in srgb, var(--accent) 40%, transparent); }
 .avatar-display img { width: 100%; height: 100%; object-fit: cover; }
 
 .toast { position: fixed; top: calc(env(safe-area-inset-top) + 16px); left: 50%; transform: translateX(-50%) translateY(-100px); background: var(--bg-2); border: 1px solid var(--glass-border); color: var(--text); padding: 12px 20px; border-radius: 100px; font-size: 14px; font-weight: 500; z-index: 600; transition: transform 0.4s cubic-bezier(0.16,1,0.3,1); box-shadow: 0 8px 32px rgba(0,0,0,0.4); max-width: calc(100vw - 40px); }
 .toast.show { transform: translateX(-50%) translateY(0); }
 .empty { text-align: center; padding: 40px 20px; color: var(--text-muted); }
 .empty-icon { font-size: 40px; margin-bottom: 12px; opacity: 0.5; }
-.empty-text { font-family: 'Fraunces', serif; font-style: italic; }
-.config-error { padding: 40px 24px; text-align: center; color: var(--text-dim); font-family: 'Fraunces', serif; }
+.empty-text { font-weight: 400; }
+.config-error { padding: 40px 24px; text-align: center; color: var(--text-dim);  }
 .config-error h2 { font-size: 28px; margin-bottom: 16px; color: var(--text); }
 .config-error code { background: rgba(255,255,255,0.06); padding: 2px 8px; border-radius: 6px; font-family: monospace; font-size: 13px; }
 
@@ -530,7 +617,7 @@ textarea.input { resize: none; min-height: 100px; line-height: 1.5; }
 .story-ring.seen { background: rgba(255,255,255,0.14); }
 .story-ring.none { background: transparent; border: 2px dashed var(--glass-border); }
 .story-ring-inner { width: 100%; height: 100%; border-radius: 50%; background: var(--bg-0); padding: 2px; }
-.story-avatar { width: 100%; height: 100%; border-radius: 50%; overflow: hidden; background: linear-gradient(135deg, var(--avc, var(--accent)), var(--accent-soft)); display: flex; align-items: center; justify-content: center; font-family: 'Fraunces', serif; font-size: 22px; color: #fff; }
+.story-avatar { width: 100%; height: 100%; border-radius: 50%; overflow: hidden; background: linear-gradient(135deg, var(--avc, var(--accent)), var(--accent-soft)); display: flex; align-items: center; justify-content: center;  font-size: 22px; color: #fff; }
 .story-avatar img { width: 100%; height: 100%; object-fit: cover; }
 .story-avatar.ivo { --avc: var(--ivo); }
 .story-avatar.niki { --avc: var(--niki); }
@@ -545,14 +632,14 @@ textarea.input { resize: none; min-height: 100px; line-height: 1.5; }
 .story-progress-fill.done { width: 100%; }
 .story-viewer-head { display: flex; align-items: center; gap: 10px; padding: 4px 16px 10px; color: #fff; }
 .story-viewer-head .med-avatar { border: 1px solid rgba(255,255,255,0.3); }
-.story-viewer-name { font-family: 'Fraunces', serif; font-size: 16px; }
+.story-viewer-name {  font-size: 16px; }
 .story-viewer-time { font-size: 12px; color: rgba(255,255,255,0.6); }
 .story-viewer-close { margin-left: auto; background: none; border: none; color: #fff; font-size: 28px; cursor: pointer; line-height: 1; padding: 4px 8px; }
 .story-stage { flex: 1; position: relative; display: flex; align-items: center; justify-content: center; overflow: hidden; }
 .story-stage img { max-width: 100%; max-height: 100%; object-fit: contain; animation: storyIn 0.35s cubic-bezier(0.16,1,0.3,1); }
 .story-nav { position: absolute; inset: 0; display: flex; }
 .story-nav div { flex: 1; }
-.story-caption { padding: 12px 20px calc(env(safe-area-inset-bottom) + 20px); color: #fff; font-family: 'Fraunces', serif; font-size: 15px; text-align: center; }
+.story-caption { padding: 12px 20px calc(env(safe-area-inset-bottom) + 20px); color: #fff;  font-size: 15px; text-align: center; }
 .story-expiry { padding: 0 20px calc(env(safe-area-inset-bottom) + 14px); text-align: center; color: rgba(255,255,255,0.45); font-size: 11px; }
 .story-delete { background: none; border: none; color: rgba(255,255,255,0.55); font-size: 12px; cursor: pointer; font-family: inherit; text-decoration: underline; }
 
@@ -660,7 +747,7 @@ video.story-preview-img { width: 100%; max-height: 46vh; }
 .editor-overlay.active { display: flex; }
 
 .editor-top { display: flex; align-items: center; gap: 10px; padding: 10px 14px; }
-.editor-top h2 { font-family: 'Fraunces', serif; font-size: 18px; font-weight: 500; flex: 1; }
+.editor-top h2 {  font-size: 18px; font-weight: 500; flex: 1; }
 .ed-icon-btn {
   width: 38px; height: 38px; border-radius: 50%;
   background: var(--glass); border: 1px solid var(--glass-border);
@@ -788,10 +875,10 @@ input.ed-slider::-moz-range-thumb {
 }
 .lock-screen.active { display: flex; }
 .lock-inner { width: 100%; max-width: 320px; text-align: center; }
-.lock-mark { font-family: 'Fraunces', serif; font-size: 34px; margin-bottom: 6px;
+.lock-mark {  font-size: 34px; margin-bottom: 6px;
   background: linear-gradient(135deg, #7BC4F5 0%, #F4A8C8 100%);
   -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
-.lock-name { font-family: 'Fraunces', serif; font-style: italic; color: var(--text-dim); font-size: 15px; }
+.lock-name { font-weight: 400; color: var(--text-dim); font-size: 15px; }
 .lock-msg { color: var(--text-muted); font-size: 13px; margin: 14px 0 26px; min-height: 18px; }
 .lock-btn { max-width: 280px; margin-left: auto; margin-right: auto; }
 
@@ -809,8 +896,104 @@ input.ed-slider::-moz-range-thumb {
 }
 .pin-key:active { transform: scale(0.93); background: rgba(255,255,255,0.09); }
 
+/* ===== appearance picker ===== */
+.theme-choice {
+  width: 100%; display: flex; align-items: center; gap: 10px;
+  background: var(--card); border: 0.5px solid var(--glass-border);
+  border-radius: 14px; padding: 14px 16px; margin-bottom: 8px;
+  cursor: pointer; font-family: inherit; color: var(--text); text-align: left;
+  transition: background 0.2s;
+}
+.theme-choice.active { border-color: var(--accent); }
+.theme-choice-label { font-size: 15px; font-weight: 500; letter-spacing: -0.01em; }
+.theme-choice-sub { font-size: 12px; color: var(--text-muted); margin-left: auto; }
+.theme-check { color: var(--accent); font-size: 15px; width: 14px; }
+
+/* ===== questions coloured by whoever asked ===== */
+.question-card {
+  border-left: 2.5px solid var(--asker, var(--glass-border));
+  border-radius: 0 var(--r-card) var(--r-card) 0;
+  background: var(--card);
+  position: relative;
+  transition: transform var(--dur) var(--ease-spring), opacity 0.3s ease;
+}
+.question-card.by-ivo  { --asker: var(--ivo);  background: color-mix(in srgb, var(--ivo) 7%, var(--card)); }
+.question-card.by-niki { --asker: var(--niki); background: color-mix(in srgb, var(--niki) 7%, var(--card)); }
+/* Both answered: it recedes, so what's open stands out. */
+.question-card.settled { opacity: 0.5; background: var(--card); }
+.question-card.settled .question-text { color: var(--text-dim); }
+
+.question-meta { align-items: center; }
+.asker-label { color: var(--asker, var(--text-muted)); font-weight: 600; }
+
+/* The dot. Only where something is genuinely waiting for you. */
+.new-dot {
+  width: 8px; height: 8px; border-radius: 50%;
+  background: var(--asker, var(--accent));
+  flex-shrink: 0; margin-left: auto;
+  animation: dotIn 0.4s var(--ease-spring);
+}
+@keyframes dotIn { from { transform: scale(0); } to { transform: scale(1); } }
+
+.card-dot {
+  position: absolute; top: 14px; right: 14px;
+  width: 8px; height: 8px; border-radius: 50%;
+  background: var(--accent);
+  animation: dotIn 0.4s var(--ease-spring);
+}
+
+/* One dot up top that means: something, somewhere, is new. */
+.hero-bell { margin-left: auto; position: relative; width: 30px; height: 30px; display: flex; align-items: center; justify-content: center; cursor: pointer; }
+.hero-bell-icon { font-size: 15px; color: var(--text-dim); }
+.hero-bell .card-dot { top: 1px; right: 1px; border: 1.5px solid var(--bg-0); width: 9px; height: 9px; }
+
+/* ===== motion (v2.6) ===== */
+/* 1. Screens arrive instead of appearing. */
+.screen { animation: screenIn 0.34s cubic-bezier(0.22, 1, 0.36, 1); }
+@keyframes screenIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+.screen.from-back { animation: screenBack 0.34s cubic-bezier(0.22, 1, 0.36, 1); }
+@keyframes screenBack { from { opacity: 0; transform: translateX(-14px); } to { opacity: 1; transform: none; } }
+
+/* 2. The seconds turn over rather than snapping. */
+@keyframes tick { 0% { opacity: 0.35; transform: translateY(-2px); } 100% { opacity: 1; transform: none; } }
+.counter-num.ticked { animation: tick 0.28s cubic-bezier(0.22, 1, 0.36, 1); }
+
+/* 3. Swipe back: the screen follows your thumb. */
+.screen.dragging { animation: none; transition: none; }
+.swipe-hint {
+  position: fixed; left: 0; top: 0; bottom: 0; width: 22px; z-index: 5;
+}
+
+/* Everything that can be pressed answers the press. */
+.question-card:active, .event-card:active, .settings-row:active,
+.login-card:active, .theme-choice:active { transform: scale(0.985); }
+.settings-row { transition: transform 0.18s var(--ease-spring), background 0.18s; }
+.settings-row:active { background: var(--card-hover); }
+
+@media (prefers-reduced-motion: reduce) {
+  .screen, .counter-num.ticked, .new-dot, .card-dot { animation: none !important; }
+}
+
+/* ===== what's new ===== */
+.whats-new-tag {
+  text-align: center; font-size: 11px; letter-spacing: 0.08em;
+  text-transform: uppercase; color: var(--accent); font-weight: 600;
+  margin-bottom: 6px;
+}
+.whats-new-list { list-style: none; margin: 6px 0 22px; padding: 0; }
+.whats-new-list li {
+  font-size: 14px; line-height: 1.45; color: var(--text-dim);
+  padding: 10px 0 10px 22px; position: relative;
+  border-bottom: 0.5px solid var(--hairline);
+}
+.whats-new-list li:last-child { border-bottom: none; }
+.whats-new-list li::before {
+  content: ''; position: absolute; left: 4px; top: 17px;
+  width: 6px; height: 6px; border-radius: 50%; background: var(--accent);
+}
+
 /* ===== CHAT ===== */
-.chat-divider { text-align: center; margin: 28px 0 16px; font-family: 'Fraunces', serif; font-style: italic; color: var(--text-muted); font-size: 13px; display: flex; align-items: center; gap: 10px; }
+.chat-divider { text-align: center; margin: 28px 0 16px; font-weight: 400; color: var(--text-muted); font-size: 13px; display: flex; align-items: center; gap: 10px; }
 .chat-divider::before, .chat-divider::after { content: ''; flex: 1; height: 1px; background: var(--glass-border); }
 
 .chat-list { display: flex; flex-direction: column; gap: 8px; margin-bottom: 16px; }
@@ -848,7 +1031,7 @@ input, textarea, select { font-size: 16px !important; -webkit-text-size-adjust: 
 .chat-attach-btn { width: 40px; height: 40px; border-radius: 50%; background: rgba(255,255,255,0.05); border: 1px solid var(--glass-border); color: var(--text); cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 18px; flex-shrink: 0; }
 .chat-send-btn { width: 40px; height: 40px; border-radius: 50%; background: linear-gradient(135deg, var(--accent), var(--accent-soft)); color: #0A0612; border: none; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 18px; flex-shrink: 0; font-weight: 700; }
 .chat-send-btn:disabled { opacity: 0.4; cursor: default; }
-.chat-uploading { padding: 8px 12px; color: var(--text-muted); font-size: 12px; font-style: italic; font-family: 'Fraunces', serif; }
+.chat-uploading { padding: 8px 12px; color: var(--text-muted); font-size: 12px;  }
 `;
 
 // ===============================================================
@@ -891,10 +1074,11 @@ const HTML = `
         <div class="greeting-name" id="homeName">—</div>
         <div class="greeting-sub" id="homeSub">a little world, just for two</div>
       </div>
+      <div class="hero-bell" id="heroBell"><span class="hero-bell-icon">◉</span></div>
     </div>
     <div class="story-row" id="storyRow"></div>
     <input type="file" id="storyFile" accept="image/*,video/*" style="display:none;">
-    <input type="file" id="storyCamera" accept="image/*,video/*" capture="user" style="display:none;">
+    <input type="file" id="storyCamera" accept="image/*,video/*" capture="environment" style="display:none;">
     <div class="coins-bar">
       <div class="coins-display">
         <div class="coin-icon">★</div>
@@ -928,12 +1112,12 @@ const HTML = `
     </div>
     <div class="counter-card" style="padding: 20px;">
       <div class="counter-label">until our first anniversary</div>
-      <div style="font-family: 'Fraunces', serif; font-size: 32px; margin-top: 4px;" id="anniversaryCountdown">— days</div>
+      <div style=" font-size: 32px; margin-top: 4px;" id="anniversaryCountdown">— days</div>
     </div>
 
     <div class="counter-card" style="padding: 20px;">
       <div class="counter-label">since we first spoke, 8 may 2026</div>
-      <div style="font-family: 'Fraunces', serif; font-size: 32px; margin-top: 4px;" id="firstContactCount">— days</div>
+      <div style=" font-size: 32px; margin-top: 4px;" id="firstContactCount">— days</div>
       <div style="font-size: 11px; color: var(--text-muted); margin-top: 6px;" id="firstContactSub"></div>
     </div>
     <div class="section-title">our moments<button class="add-btn" id="addEventBtn">+ add</button></div>
@@ -995,6 +1179,14 @@ const HTML = `
     </div>
     <div class="settings-section">
       <div class="settings-row" data-goto="memories"><span class="settings-label">manage moments & countdowns</span><span class="settings-value">›</span></div>
+      <div class="settings-row" id="notesRow">
+        <span class="settings-label">what's new</span>
+        <span class="settings-value">v${'2.6'} ›</span>
+      </div>
+      <div class="settings-row" id="themeRow">
+        <span class="settings-label">appearance</span>
+        <span class="settings-value" id="themeValue">—</span>
+      </div>
       <div class="settings-row" id="lockRow">
         <span class="settings-label">app lock</span>
         <span class="settings-value" id="lockValue">—</span>
@@ -1008,8 +1200,8 @@ const HTML = `
     <div class="settings-section">
       <div class="settings-row" id="logoutRow"><span class="settings-label" style="color: #ff95a5;">logout</span><span class="settings-value">›</span></div>
     </div>
-    <div style="text-align: center; margin-top: 32px; color: var(--text-muted); font-size: 12px; font-family: 'Fraunces', serif; font-style: italic;">
-      ivolina v2.5.1 · made with love
+    <div style="text-align: center; margin-top: 32px; color: var(--text-muted); font-size: 12px; font-weight: 400;">
+      ivolina v2.6 · made with love
     </div>
   </div>
 </div>
@@ -1046,9 +1238,12 @@ function showScreen(name, opts = {}) {
   const leaving = document.querySelector('.screen.active');
   if (leaving) state.scrollPositions[leaving.id] = window.scrollY;
 
-  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+  document.querySelectorAll('.screen').forEach(s => { s.classList.remove('active'); s.classList.remove('from-back'); });
   const t = document.getElementById('screen-' + name);
-  if (t) t.classList.add('active');
+  if (t) {
+    if (opts.back) t.classList.add('from-back');
+    t.classList.add('active');
+  }
   if (name === 'home') renderHome();
   if (name === 'memories') renderMemories();
   if (name === 'questions') renderQuestions();
@@ -1165,6 +1360,31 @@ function pickQuestionPreviews() {
   return shuffled;
 }
 
+
+// ---------------------------------------------------------------
+// What is genuinely waiting for you. Used for the dots.
+// The rule: a dot only appears where YOU still have something to do
+// or something to see. If it lights up everywhere, it means nothing.
+// ---------------------------------------------------------------
+function pendingCounts() {
+  const me = state.user;
+  const other = me === 'ivo' ? 'nikolina' : 'ivo';
+  const seen = seenStoryIds();
+  return {
+    questions: state.questions.filter(q => !q.answers[me]).length,
+    stories: state.stories.filter(s => s.author === other && !seen.has(s.id)).length,
+    drawings: (() => {
+      const last = parseInt(lsGet('seenDrawingAt') || '0', 10);
+      return state.drawings.filter(d => d.author === other && d.created > last).length;
+    })(),
+  };
+}
+
+function anythingPending() {
+  const p = pendingCounts();
+  return p.questions + p.stories + p.drawings > 0;
+}
+
 function renderHome() {
   const p = state.profile[state.user];
   document.getElementById('homeName').textContent = p?.name || '';
@@ -1178,6 +1398,25 @@ function renderHome() {
   document.getElementById('coinsCount').textContent = state.coins[state.user].toLocaleString();
   updateCheckinButton();
   renderStoryRow();
+
+  const pending = pendingCounts();
+  const bell = document.getElementById('heroBell');
+  if (bell) {
+    bell.querySelector('.card-dot')?.remove();
+    if (anythingPending()) {
+      const d = document.createElement('span');
+      d.className = 'card-dot';
+      bell.appendChild(d);
+    }
+    bell.onclick = () => {
+      if (pending.questions) showScreen('questions');
+      else if (pending.stories) {
+        const other = state.user === 'ivo' ? 'nikolina' : 'ivo';
+        openStoryViewer(other);
+      } else if (pending.drawings) showScreen('drawing');
+      else toast('all caught up');
+    };
+  }
 
   const grid = document.getElementById('featureGrid');
   const elapsed = elapsedFromStart();
@@ -1193,6 +1432,7 @@ function renderHome() {
     const authorName = state.profile[latestDrawing.author]?.name || latestDrawing.author;
     drawingCardHtml = `
       <div class="feature-card drawing-preview" data-goto="drawing">
+        ${pending.drawings ? '<span class="card-dot"></span>' : ''}
         <div class="drawing-preview-img"><img src="${latestDrawing.dataurl}" alt=""></div>
         <div class="drawing-preview-info">
           <div style="min-width: 0;">
@@ -1225,6 +1465,7 @@ function renderHome() {
       </div>
     </div>
     <div class="feature-card questions-preview" data-goto="questions">
+      ${pending.questions ? '<span class="card-dot"></span>' : ''}
       <div class="questions-preview-header">
         <div>
           <div class="feature-title">questions</div>
@@ -1351,7 +1592,15 @@ function updateCounters() {
     }
   }
 
-  const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+  const set = (id, v) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    if (el.textContent === String(v)) return;   // nothing changed, don't flicker
+    el.textContent = v;
+    el.classList.remove('ticked');
+    void el.offsetWidth;
+    el.classList.add('ticked');
+  };
   if (RELATIONSHIP_START > new Date()) {
     set('cYears', 0); set('cMonths', 0); set('cDays', 0); set('cHours', 0); set('cMins', 0); set('cSecs', 0);
   } else {
@@ -1462,11 +1711,16 @@ function renderQuestions() {
     const meAnswered = !!q.answers[me];
     const otherAnswered = !!q.answers[other];
     const dateStr = new Date(q.created).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+    const settled = meAnswered && otherAnswered;
+    // A dot means: this one needs you. Nothing else earns one.
+    const needsYou = !meAnswered;
     return `
-      <div class="question-card" data-q="${q.id}">
+      <div class="question-card by-${q.asker === 'ivo' ? 'ivo' : 'niki'} ${settled ? 'settled' : ''}" data-q="${q.id}">
         <div class="question-meta">
           ${avatarHtml(q.asker, 'tiny')}
-          <span>${escapeHtml(askerName)} asked · ${dateStr}</span>
+          <span class="asker-label">${q.asker === state.user ? 'you' : escapeHtml(askerName)}</span>
+          <span>· ${dateStr}</span>
+          ${needsYou ? '<span class="new-dot"></span>' : ''}
         </div>
         <div class="question-text">${escapeHtml(q.text)}</div>
         <div class="question-status">
@@ -1669,10 +1923,11 @@ function renderQuestionDetail() {
   const otherName = state.profile[other]?.name || other;
 
   let content = `
-    <div class="question-card" style="margin-bottom: 24px;">
+    <div class="question-card by-${q.asker === 'ivo' ? 'ivo' : 'niki'}" style="margin-bottom: 24px;">
       <div class="question-meta">
         ${avatarHtml(q.asker, 'tiny')}
-        <span>${escapeHtml(state.profile[q.asker]?.name || q.asker)} asked</span>
+        <span class="asker-label">${q.asker === state.user ? 'you' : escapeHtml(state.profile[q.asker]?.name || q.asker)}</span>
+        <span>· asked</span>
       </div>
       <div class="question-text">${escapeHtml(q.text)}</div>
     </div>
@@ -2045,9 +2300,83 @@ function startKeyboardTracking() {
   vv.addEventListener('scroll', updateComposerForKeyboard);
 }
 
+
+// ---------------------------------------------------------------
+// Swipe from the left edge to go back, the way iOS does it.
+// The screen follows your thumb; let go past a third and it commits.
+// ---------------------------------------------------------------
+const BACK_TARGETS = {
+  'screen-memories': 'home',
+  'screen-questions': 'home',
+  'screen-questionDetail': 'questions',
+  'screen-drawing': 'home',
+  'screen-settings': 'home',
+};
+
+function startEdgeSwipe() {
+  let tracking = false;
+  let startX = 0, startY = 0, dx = 0;
+  let screen = null;
+
+  document.addEventListener('touchstart', (e) => {
+    if (e.touches.length !== 1) return;
+    // Only from the very left edge, and never over the editor or a story.
+    if (e.touches[0].clientX > 24) return;
+    if (document.getElementById('storyViewer')?.classList.contains('active')) return;
+    if (document.getElementById('editorOverlay')?.classList.contains('active')) return;
+    if (document.getElementById('lockScreen')?.classList.contains('active')) return;
+    if (document.getElementById('modalBackdrop')?.classList.contains('active')) return;
+
+    screen = document.querySelector('.screen.active');
+    if (!screen || !BACK_TARGETS[screen.id]) return;
+
+    tracking = true;
+    startX = e.touches[0].clientX;
+    startY = e.touches[0].clientY;
+    dx = 0;
+  }, { passive: true });
+
+  document.addEventListener('touchmove', (e) => {
+    if (!tracking || !screen) return;
+    dx = e.touches[0].clientX - startX;
+    const dy = Math.abs(e.touches[0].clientY - startY);
+    if (dx < 0 || dy > Math.abs(dx)) return;   // going up or down, not back
+    screen.classList.add('dragging');
+    screen.style.transform = `translateX(${dx}px)`;
+    screen.style.opacity = String(Math.max(0.45, 1 - dx / (window.innerWidth * 1.2)));
+  }, { passive: true });
+
+  const finish = () => {
+    if (!tracking || !screen) return;
+    tracking = false;
+    const target = BACK_TARGETS[screen.id];
+    const committed = dx > window.innerWidth / 3;
+
+    screen.style.transition = 'transform 0.26s cubic-bezier(0.22,1,0.36,1), opacity 0.26s';
+    screen.style.transform = committed ? `translateX(${window.innerWidth}px)` : '';
+    screen.style.opacity = committed ? '0' : '';
+
+    const done = screen;
+    setTimeout(() => {
+      done.classList.remove('dragging');
+      done.style.transition = '';
+      done.style.transform = '';
+      done.style.opacity = '';
+      if (committed && target) showScreen(target, { back: true });
+    }, committed ? 230 : 260);
+    screen = null;
+  };
+
+  document.addEventListener('touchend', finish, { passive: true });
+  document.addEventListener('touchcancel', finish, { passive: true });
+}
+
 // ----- DRAWING -----
 function initDrawing() {
   renderGallery();
+  // Seeing the gallery counts as seeing the drawings in it.
+  const newest = state.drawings.reduce((m, d) => Math.max(m, d.created || 0), 0);
+  if (newest) lsSet('seenDrawingAt', String(newest));
 }
 
 
@@ -2264,7 +2593,7 @@ function openStoryPicker() {
   document.getElementById('storyCancel').onclick = closeModal;
 }
 
-async function handleStoryFile(e) {
+async function handleStoryFile(e, source = 'gallery') {
   const f = e.target.files[0];
   e.target.value = '';
   if (!f) return;
@@ -2298,10 +2627,18 @@ async function handleStoryFile(e) {
       return;
     }
 
-    // 1440px on the long edge keeps the original aspect ratio and stays sharp.
+    if (source === 'camera') {
+      // Straight from the camera: frame it 9:16 like a story should be.
+      const cropped = await cropToPortrait(f);
+      const dims = await imageDimensions(cropped);
+      showStoryConfirm(cropped, dims, { kind: 'image', source: 'camera', originalFile: f });
+      return;
+    }
+
+    // From the gallery: 1440px on the long edge, original shape kept.
     const dataUrl = await resizeImageToDataUrl(f, 1440, 0.85);
     const dims = await imageDimensions(dataUrl);
-    showStoryConfirm(dataUrl, dims, { kind: 'image' });
+    showStoryConfirm(dataUrl, dims, { kind: 'image', source: 'gallery' });
   } catch (err) {
     console.error('handleStoryFile', err);
     showModal(`
@@ -2337,6 +2674,44 @@ function videoMetadata(file) {
   });
 }
 
+// Crops to 9:16 around the centre — the shape a story actually fills.
+// Only used for the camera; gallery photos keep whatever shape they have.
+function cropToPortrait(file, ratio = 9 / 16, maxH = 1600, quality = 0.85) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = reject;
+    reader.onload = () => {
+      const img = new Image();
+      img.onerror = reject;
+      img.onload = () => {
+        const srcRatio = img.width / img.height;
+        let sx = 0, sy = 0, sw = img.width, sh = img.height;
+
+        if (srcRatio > ratio) {
+          // too wide: trim the sides
+          sw = Math.round(img.height * ratio);
+          sx = Math.round((img.width - sw) / 2);
+        } else if (srcRatio < ratio) {
+          // too tall: trim top and bottom
+          sh = Math.round(img.width / ratio);
+          sy = Math.round((img.height - sh) / 2);
+        }
+
+        let outH = Math.min(maxH, sh);
+        let outW = Math.round(outH * ratio);
+
+        const c = document.createElement('canvas');
+        c.width = outW; c.height = outH;
+        const ctx = c.getContext('2d');
+        ctx.drawImage(img, sx, sy, sw, sh, 0, 0, outW, outH);
+        resolve(c.toDataURL('image/jpeg', quality));
+      };
+      img.src = reader.result;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
 function imageDimensions(dataUrl) {
   return new Promise((resolve) => {
     const img = new Image();
@@ -2349,7 +2724,8 @@ function imageDimensions(dataUrl) {
 function showStoryConfirm(previewUrl, dims, meta = { kind: 'image' }) {
   const isVideo = meta.kind === 'video';
   const lengthNote = isVideo && dims.duration
-    ? `<p style="margin-bottom:12px;">${dims.duration.toFixed(0)} seconds</p>` : '';
+    ? `<p style="margin-bottom:12px;">${dims.duration.toFixed(0)} seconds</p>`
+    : (meta.source === 'camera' ? '<p style="margin-bottom:12px;">framed 9:16</p>' : '');
   showModal(`
     <div class="modal-handle"></div>
     <h2>post this?</h2>
@@ -2360,12 +2736,28 @@ function showStoryConfirm(previewUrl, dims, meta = { kind: 'image' }) {
     <input type="text" id="storyCaption" class="input" placeholder="caption (optional)" maxlength="120">
     <button class="btn btn-primary" id="storyPost">post to story</button>
     ${isVideo ? '' : '<button class="btn btn-ghost" id="storyDecorate">✎ draw on it</button>'}
+    ${meta.source === 'camera' && meta.originalFile ? '<button class="btn btn-ghost" id="storyFullFrame">use the whole photo instead</button>' : ''}
+    ${meta.source === 'cameraFull' && meta.originalFile ? '<button class="btn btn-ghost" id="storyCrop">crop it to 9:16</button>' : ''}
     <button class="btn btn-ghost" id="storyBack">choose another</button>
   `);
   document.getElementById('storyPost').onclick = () => postStory(previewUrl, dims, meta);
   document.getElementById('storyBack').onclick = openStoryPicker;
   const dec = document.getElementById('storyDecorate');
   if (dec) dec.onclick = () => decorateStory(previewUrl, dims, meta);
+
+  const full = document.getElementById('storyFullFrame');
+  if (full) full.onclick = async () => {
+    const whole = await resizeImageToDataUrl(meta.originalFile, 1440, 0.85);
+    const d = await imageDimensions(whole);
+    showStoryConfirm(whole, d, { kind: 'image', source: 'cameraFull', originalFile: meta.originalFile });
+  };
+
+  const recrop = document.getElementById('storyCrop');
+  if (recrop) recrop.onclick = async () => {
+    const cropped = await cropToPortrait(meta.originalFile);
+    const d = await imageDimensions(cropped);
+    showStoryConfirm(cropped, d, { kind: 'image', source: 'camera', originalFile: meta.originalFile });
+  };
 }
 
 // Open the studio with the photo as the canvas, then come back here with
@@ -4476,6 +4868,131 @@ function maybeLockOnStart() {
 }
 
 
+
+// ===============================================================
+// LIGHT / DARK (v2.6)
+// Follows the iPhone unless you've chosen otherwise in settings.
+// ===============================================================
+function themePreference() {
+  const t = lsGet('theme');
+  return (t === 'light' || t === 'dark') ? t : 'auto';
+}
+
+function systemPrefersLight() {
+  return window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches;
+}
+
+function resolvedTheme() {
+  const pref = themePreference();
+  if (pref === 'auto') return systemPrefersLight() ? 'light' : 'dark';
+  return pref;
+}
+
+function applyTheme() {
+  const theme = resolvedTheme();
+  document.documentElement.setAttribute('data-theme', theme);
+  // Colour the status bar to match, so the notch doesn't sit on a seam.
+  let meta = document.querySelector('meta[name="theme-color"]');
+  if (!meta) {
+    meta = document.createElement('meta');
+    meta.name = 'theme-color';
+    document.head.appendChild(meta);
+  }
+  meta.content = theme === 'light' ? '#FDFCFF' : '#07060B';
+}
+
+function watchSystemTheme() {
+  if (!window.matchMedia) return;
+  const mq = window.matchMedia('(prefers-color-scheme: light)');
+  const onChange = () => { if (themePreference() === 'auto') applyTheme(); };
+  if (mq.addEventListener) mq.addEventListener('change', onChange);
+  else if (mq.addListener) mq.addListener(onChange);
+}
+
+function openThemeSettings() {
+  const pref = themePreference();
+  const row = (id, label, sub) => `
+    <button class="theme-choice ${pref === id ? 'active' : ''}" data-theme-choice="${id}">
+      <span class="theme-choice-label">${label}</span>
+      <span class="theme-choice-sub">${sub}</span>
+      <span class="theme-check">${pref === id ? '✓' : ''}</span>
+    </button>`;
+  showModal(`
+    <div class="modal-handle"></div>
+    <h2>appearance</h2>
+    <p>dark suits the evenings, but it's your call</p>
+    ${row('auto', 'match my iPhone', systemPrefersLight() ? 'light right now' : 'dark right now')}
+    ${row('dark', 'always dark', 'the way it was')}
+    ${row('light', 'always light', 'same colours, deeper')}
+    <button class="btn btn-ghost" id="themeClose" style="margin-top:10px;">close</button>
+  `);
+  document.querySelectorAll('[data-theme-choice]').forEach(b => {
+    b.onclick = () => {
+      lsSet('theme', b.dataset.themeChoice === 'auto' ? '' : b.dataset.themeChoice);
+      applyTheme();
+      openThemeSettings();
+      renderSettings();
+    };
+  });
+  document.getElementById('themeClose').onclick = closeModal;
+}
+
+
+// ===============================================================
+// WHAT'S NEW (v2.6)
+// Shown once after an update, then never again until the next one.
+// Add the newest release at the top; older entries can stay.
+// ===============================================================
+const APP_VERSION = '2.6';
+
+const RELEASE_NOTES = {
+  '2.6': {
+    title: 'A new look',
+    lines: [
+      'Light and dark — ivolina now follows your iPhone, or you can pick one in settings',
+      'The iOS typeface throughout, so it reads like the rest of your phone',
+      'Questions carry the colour of whoever asked them',
+      'A small dot marks anything still waiting for you',
+      'Swipe from the left edge to go back',
+      'Camera photos for stories are framed 9:16',
+    ],
+  },
+  '2.5': {
+    title: 'Locked and dated',
+    lines: [
+      'Face ID when you open ivolina, with your passcode and a PIN behind it',
+      'Together since 27 July 2026 — with the day you first spoke kept alongside',
+    ],
+  },
+};
+
+function showReleaseNotesIfNew() {
+  const seen = lsGet('seenVersion');
+  if (seen === APP_VERSION) return false;
+
+  const note = RELEASE_NOTES[APP_VERSION];
+  // First ever run: don't greet someone with release notes.
+  if (!note || !seen) {
+    lsSet('seenVersion', APP_VERSION);
+    return false;
+  }
+
+  showModal(`
+    <div class="modal-handle"></div>
+    <div class="whats-new-tag">what's new · ${APP_VERSION}</div>
+    <h2>${escapeHtml(note.title)}</h2>
+    <ul class="whats-new-list">
+      ${note.lines.map(l => `<li>${escapeHtml(l)}</li>`).join('')}
+    </ul>
+    <button class="btn btn-primary" id="notesOk">got it</button>
+  `);
+  document.getElementById('notesOk').onclick = () => {
+    lsSet('seenVersion', APP_VERSION);
+    closeModal();
+  };
+  return true;
+}
+
 // ----- SETTINGS -----
 function renderSettings() {
   const me = state.user;
@@ -4485,6 +5002,12 @@ function renderSettings() {
   else avatarEl.textContent = me === 'ivo' ? 'I' : 'N';
   document.getElementById('settingsNameValue').textContent = p?.name || '—';
   document.getElementById('settingsUserValue').textContent = me === 'ivo' ? 'Ivo (blue)' : 'Nikolina (pink)';
+
+  const tv = document.getElementById('themeValue');
+  if (tv) {
+    const pref = themePreference();
+    tv.textContent = (pref === 'auto' ? 'match iPhone' : pref) + ' ›';
+  }
 
   const lv = document.getElementById('lockValue');
   if (lv) {
@@ -4740,8 +5263,8 @@ function wireEvents() {
   document.getElementById('setupAvatarFile').onchange = handleSetupAvatar;
   document.getElementById('setupContinueBtn').onclick = finishSetup;
   document.getElementById('checkinBtn').onclick = dailyCheckin;
-  document.getElementById('storyFile').onchange = handleStoryFile;
-  document.getElementById('storyCamera').onchange = handleStoryFile;
+  document.getElementById('storyFile').onchange = (e) => handleStoryFile(e, 'gallery');
+  document.getElementById('storyCamera').onchange = (e) => handleStoryFile(e, 'camera');
   document.getElementById('addEventBtn').onclick = openAddEvent;
   document.getElementById('askQuestionBtn').onclick = openAskQuestion;
   document.querySelectorAll('.filter-tab').forEach(t => {
@@ -4753,6 +5276,22 @@ function wireEvents() {
   document.getElementById('settingsAvatarBtn').onclick = () => document.getElementById('settingsAvatarFile').click();
   document.getElementById('settingsAvatarFile').onchange = handleSettingsAvatar;
   document.getElementById('changeNameRow').onclick = changeName;
+  document.getElementById('notesRow').onclick = () => {
+    lsSet('seenVersion', '');
+    if (!showReleaseNotesIfNew()) {
+      lsSet('seenVersion', APP_VERSION);
+      const n = RELEASE_NOTES[APP_VERSION];
+      showModal(`
+        <div class="modal-handle"></div>
+        <div class="whats-new-tag">what's new · ${APP_VERSION}</div>
+        <h2>${escapeHtml(n.title)}</h2>
+        <ul class="whats-new-list">${n.lines.map(l => `<li>${escapeHtml(l)}</li>`).join('')}</ul>
+        <button class="btn btn-primary" id="notesOk2">got it</button>
+      `);
+      document.getElementById('notesOk2').onclick = closeModal;
+    }
+  };
+  document.getElementById('themeRow').onclick = openThemeSettings;
   document.getElementById('lockRow').onclick = openLockSettings;
   document.getElementById('notifyRow').onclick = openNotificationSettings;
   document.getElementById('resetCoinsRow').onclick = resetCoins;
@@ -4779,6 +5318,9 @@ export function boot() {
     `;
     return;
   }
+
+  applyTheme();
+  watchSystemTheme();
 
   root.innerHTML = HTML;
   wireEvents();
@@ -4822,8 +5364,10 @@ export function boot() {
       const p = state.profile[session];
       if (!p || !p.name) showScreen('setup');
       else showScreen('home');
-      maybeLockOnStart();
+      const wasLocked = maybeLockOnStart();
       startLockWatcher();
+      // Don't stack the notes on top of the lock screen.
+      if (!wasLocked) setTimeout(showReleaseNotesIfNew, 700);
     } else {
       showScreen('login');
       startLockWatcher();
