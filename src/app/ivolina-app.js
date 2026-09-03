@@ -433,7 +433,7 @@ body::after {
 
 input, textarea { -webkit-user-select: text; user-select: text; }
 .display { font-weight: 600; letter-spacing: -0.035em; }
-.screen { display: none; min-height: 100vh; min-height: 100dvh; padding: env(safe-area-inset-top, 0) 0 env(safe-area-inset-bottom, 0); animation: fadeIn 0.5s cubic-bezier(0.16,1,0.3,1); }
+.screen { display: none; min-height: 100vh; min-height: 100dvh; padding: 0 0 env(safe-area-inset-bottom, 0); animation: fadeIn 0.5s cubic-bezier(0.16,1,0.3,1); }
 .screen.active { display: block; }
 @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
 @keyframes slideUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
@@ -477,6 +477,9 @@ textarea.input { resize: none; min-height: 100px; line-height: 1.5; }
 .back-btn { width: 40px; height: 40px; border-radius: 50%; background: var(--glass); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); border: 1px solid var(--glass-border); display: flex; align-items: center; justify-content: center; cursor: pointer; font-size: 20px; color: var(--text); }
 .app-header h1 {  font-weight: 500; font-size: 22px; flex: 1; }
 .app-content { padding: 8px 20px 100px; }
+#screen-home .app-content,
+#screen-setup .app-content { padding-top: calc(env(safe-area-inset-top) + 14px); }
+#screen-login { padding-top: calc(env(safe-area-inset-top) + 40px); }
 
 /* NEW: home header with avatar */
 .home-hero { padding: 12px 4px 28px; display: flex; align-items: center; gap: 16px; }
@@ -985,15 +988,29 @@ input.ed-slider::-moz-range-thumb {
   .screen, .counter-num.ticked, .new-dot, .card-dot { animation: none !important; }
 }
 
-/* ===== the top edge blurs what passes under it ===== */
+/* ===== the status bar, the way Instagram does it =====
+   The app draws behind the clock (viewport-fit=cover +
+   black-translucent). This strip sits exactly over that area,
+   blurs whatever scrolls underneath, and fades out downwards so
+   there is no edge. It is transparent — the aurora shows through.
+
+   One iOS constraint worth knowing: once the app draws behind the
+   status bar, the clock and icons are always white. So in light
+   mode the strip carries a slight darkening, purely so the white
+   clock stays readable. That is the same trick Instagram uses. */
 .top-blur {
   position: fixed; top: 0; left: 0; right: 0;
-  height: calc(env(safe-area-inset-top) + 30px);
+  height: calc(env(safe-area-inset-top) + 6px);
+  min-height: 44px;
   z-index: 30; pointer-events: none;
-  backdrop-filter: blur(18px) saturate(1.2);
-  -webkit-backdrop-filter: blur(18px) saturate(1.2);
-  -webkit-mask-image: linear-gradient(180deg, #000 45%, transparent 100%);
-  mask-image: linear-gradient(180deg, #000 45%, transparent 100%);
+  backdrop-filter: blur(22px) saturate(1.35);
+  -webkit-backdrop-filter: blur(22px) saturate(1.35);
+  -webkit-mask-image: linear-gradient(180deg, #000 0%, #000 62%, transparent 100%);
+  mask-image: linear-gradient(180deg, #000 0%, #000 62%, transparent 100%);
+  background: linear-gradient(180deg, rgba(0,0,0,0.16), rgba(0,0,0,0.04) 70%, transparent);
+}
+html[data-theme="light"] .top-blur {
+  background: linear-gradient(180deg, rgba(20,24,40,0.30), rgba(20,24,40,0.10) 70%, transparent);
 }
 
 /* ===== what's new ===== */
@@ -1223,7 +1240,7 @@ const HTML = `
       <div class="settings-row" id="logoutRow"><span class="settings-label" style="color: #ff95a5;">logout</span><span class="settings-value">›</span></div>
     </div>
     <div style="text-align: center; margin-top: 32px; color: var(--text-muted); font-size: 12px; font-weight: 400;">
-      ivolina v2.6.1 · made with love
+      ivolina v2.6.2 · made with love
     </div>
   </div>
 </div>
@@ -4993,10 +5010,10 @@ function openThemeSettings() {
 // Shown once after an update, then never again until the next one.
 // Add the newest release at the top; older entries can stay.
 // ===============================================================
-const APP_VERSION = '2.6.1';
+const APP_VERSION = '2.6.2';
 
 const RELEASE_NOTES = {
-  '2.6.1': {
+  '2.6.2': {
     title: 'A new look',
     lines: [
       'Light and dark — ivolina now follows your iPhone, or you can pick one in settings',
