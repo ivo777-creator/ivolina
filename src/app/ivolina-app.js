@@ -1,5 +1,5 @@
 // ===============================================================
-// IVOLINA v2.9 — full-screen stories, moving background
+// IVOLINA v2.9.1 — story gestures restored, pan while zoomed, next-up countdown
 // ===============================================================
 import { createClient } from '@supabase/supabase-js';
 
@@ -724,7 +724,13 @@ textarea.input { resize: none; min-height: 100px; line-height: 1.5; }
   max-width: 100%; max-height: 100%; object-fit: contain;
   animation: storyIn 0.35s cubic-bezier(0.16,1,0.3,1);
 }
-.story-nav { position: absolute; inset: 0; display: flex; }
+.story-nav {
+  position: absolute; inset: 0; display: flex;
+  /* Above the picture — in v2.9 the image was lifted above this layer,
+     which silently killed hold, pinch, tap and swipe-down. */
+  z-index: 2;
+  touch-action: none;
+}
 .story-nav div { flex: 1; }
 .story-caption {
   position: absolute; left: 0; right: 0; z-index: 4;
@@ -779,7 +785,7 @@ textarea.input { resize: none; min-height: 100px; line-height: 1.5; }
 .story-paused-hint.show { opacity: 1; }
 
 .story-like-btn {
-  position: absolute; right: 16px; bottom: 16px;
+  position: absolute; right: 16px; bottom: 16px; z-index: 6;
   width: 52px; height: 52px; border-radius: 50%;
   background: rgba(0,0,0,0.35); border: 1px solid rgba(255,255,255,0.25);
   backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
@@ -818,7 +824,7 @@ textarea.input { resize: none; min-height: 100px; line-height: 1.5; }
 .story-stage video.zooming { transition: none; }
 .story-stage video.settling { transition: transform 0.28s cubic-bezier(0.16,1,0.3,1); }
 .story-sound-btn {
-  position: absolute; left: 16px; bottom: 16px;
+  position: absolute; left: 16px; bottom: 16px; z-index: 6;
   width: 44px; height: 44px; border-radius: 50%;
   background: rgba(0,0,0,0.35); border: 1px solid rgba(255,255,255,0.25);
   backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
@@ -860,9 +866,12 @@ video.story-preview-img { width: 100%; max-height: 46vh; }
 }
 
 .editor-canvas-wrap {
-  flex: 1; display: flex; align-items: center; justify-content: center;
-  padding: 4px 12px 8px; min-height: 0; touch-action: none; position: relative;
+  flex: 1 1 auto; display: flex; align-items: center; justify-content: center;
+  padding: 4px 12px 8px; min-height: 120px; touch-action: none; position: relative;
+  overflow: hidden;
 }
+/* The toolbar may get tall; it should scroll rather than squash the canvas. */
+.editor-tools { flex: 0 0 auto; max-height: 56vh; overflow-y: auto; }
 #editorCanvas {
   max-width: 100%; max-height: 100%; border-radius: 16px;
   touch-action: none; display: block;
@@ -1205,7 +1214,7 @@ html[data-theme="light"] .top-blur {
 .vault-progress.show { opacity: 1; visibility: visible; transform: translateX(-50%) translateY(0); transition-delay: 0s; }
 
 .story-keep-btn {
-  position: absolute; right: 16px; bottom: 78px;
+  position: absolute; right: 16px; bottom: 78px; z-index: 6;
   width: 52px; height: 52px; border-radius: 50%;
   background: rgba(0,0,0,0.35); border: 1px solid rgba(255,255,255,0.25);
   backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
@@ -1256,6 +1265,24 @@ html[data-theme="light"] .top-blur {
 }
 @media (prefers-reduced-motion: reduce) {
   body::before, body::after { animation: none; transform: none; }
+}
+
+/* ===== the next thing coming up, on the timeline card ===== */
+.timeline-card { flex-direction: row; align-items: stretch; justify-content: space-between; gap: 14px; }
+.timeline-left { display: flex; flex-direction: column; justify-content: space-between; min-width: 0; flex: 1; }
+.timeline-next {
+  display: flex; flex-direction: column; align-items: flex-end; justify-content: center;
+  text-align: right; flex-shrink: 0; max-width: 46%;
+  padding-left: 14px; border-left: 0.5px solid var(--hairline);
+}
+.timeline-next-days { font-size: 30px; line-height: 1; color: var(--accent); }
+.timeline-next-unit {
+  font-size: 10px; color: var(--text-muted); text-transform: uppercase;
+  letter-spacing: 0.1em; margin-top: 2px;
+}
+.timeline-next-label {
+  font-size: 11px; color: var(--text-dim); margin-top: 7px; line-height: 1.3;
+  overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
 }
 
 /* ===== CHAT ===== */
@@ -1484,7 +1511,7 @@ const HTML = `
       <div class="settings-row" id="logoutRow"><span class="settings-label" style="color: #ff95a5;">logout</span><span class="settings-value">›</span></div>
     </div>
     <div style="text-align: center; margin-top: 32px; color: var(--text-muted); font-size: 12px; font-weight: 400;">
-      ivolina v2.9 · made with love
+      ivolina v2.9.1 · made with love
     </div>
   </div>
 </div>
@@ -1751,6 +1778,41 @@ function anythingPending() {
   return p.questions + p.stories + p.drawings > 0;
 }
 
+
+// Whatever comes next, counted in days. The yearly anniversary is always
+// there; a saved moment that falls sooner takes its place.
+function nextMilestone() {
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const candidates = [];
+
+  // The anniversary, this year or next — whichever is still ahead.
+  const month = RELATIONSHIP_START.getMonth();
+  const day = RELATIONSHIP_START.getDate();
+  let anniversary = new Date(today.getFullYear(), month, day);
+  if (anniversary < today) anniversary = new Date(today.getFullYear() + 1, month, day);
+  const years = anniversary.getFullYear() - RELATIONSHIP_START.getFullYear();
+  candidates.push({
+    date: anniversary,
+    label: years === 1 ? 'our first year' : `${years} years together`,
+  });
+
+  // Your own moments, if they are still to come.
+  (state.events || []).forEach(ev => {
+    if (!ev || !ev.date || !ev.title) return;
+    const d = new Date(ev.date + 'T00:00:00');
+    if (isNaN(d) || d < today) return;
+    candidates.push({ date: d, label: ev.title, emoji: ev.emoji });
+  });
+
+  candidates.sort((a, b) => a.date - b.date);
+  const next = candidates[0];
+  if (!next) return null;
+
+  const days = Math.round((next.date - today) / 86400000);
+  return { ...next, days };
+}
+
 function renderHome() {
   const p = state.profile[state.user];
   document.getElementById('homeName').textContent = p?.name || '';
@@ -1789,6 +1851,7 @@ function renderHome() {
   const previews = pickQuestionPreviews();
   const previewsHtml = previews.map(q => `<div class="questions-preview-item">${escapeHtml(q)}</div>`).join('');
   const latestDrawing = state.drawings.length ? [...state.drawings].sort((a, b) => b.created - a.created)[0] : null;
+  const upcoming = nextMilestone();
 
   let drawingCardHtml;
   if (latestDrawing) {
@@ -1823,12 +1886,20 @@ function renderHome() {
 
   const unanswered = state.questions.filter(q => !q.answers[state.user]).length;
   grid.innerHTML = `
-    <div class="feature-card full" data-goto="memories">
-      <div class="feature-icon">⏳</div>
-      <div>
-        <div class="feature-title">our timeline</div>
-        <div class="feature-sub">${elapsed.days} days · ${elapsed.hours}h together</div>
+    <div class="feature-card full timeline-card" data-goto="memories">
+      <div class="timeline-left">
+        <div class="feature-icon">⏳</div>
+        <div>
+          <div class="feature-title">our timeline</div>
+          <div class="feature-sub">${elapsed.days} days · ${elapsed.hours}h together</div>
+        </div>
       </div>
+      ${upcoming ? `
+        <div class="timeline-next">
+          <div class="timeline-next-days numeral">${upcoming.days}</div>
+          <div class="timeline-next-unit">${upcoming.days === 1 ? 'day' : 'days'}</div>
+          <div class="timeline-next-label">${escapeHtml(upcoming.label)}</div>
+        </div>` : ''}
     </div>
     <div class="feature-card questions-preview" data-goto="questions">
       ${pending.questions ? '<span class="card-dot"></span>' : ''}
@@ -2752,8 +2823,8 @@ function startAuroraParallax() {
     const y = window.scrollY || 0;
     // Gentle, and capped so a very long page doesn't drag the colour
     // completely off the screen.
-    const top = Math.max(-90, Math.min(90, y * 0.12));
-    const bottom = Math.max(-140, Math.min(140, -y * 0.07));
+    const top = Math.max(-260, Math.min(260, y * 0.34));
+    const bottom = Math.max(-340, Math.min(340, -y * 0.22));
     root.style.setProperty('--aurora-top-y', top.toFixed(1) + 'px');
     root.style.setProperty('--aurora-bottom-y', bottom.toFixed(1) + 'px');
   };
@@ -2769,8 +2840,9 @@ function startAuroraParallax() {
 }
 
 function startEdgeSwipe() {
-  let tracking = false;      // finger is down at the edge
+  let tracking = false;      // finger is down
   let engaged = false;       // we've decided this really is a back-swipe
+  let fromEdgeStart = false; // started at the very edge, or further in
   let startX = 0, startY = 0, dx = 0;
   let screen = null;
   let beneath = null;
@@ -2792,9 +2864,18 @@ function startEdgeSwipe() {
     tracking = false; engaged = false; dx = 0;
   };
 
+  // Things that scroll sideways themselves — a swipe there is theirs,
+  // not ours.
+  const SIDEWAYS = '.tool-row, .cat-chips, .filter-tabs, .swatch-row, .bg-grid, .story-row, .preset-list, .vault-grid, .sticker-grid';
+
   document.addEventListener('touchstart', (e) => {
     if (e.touches.length !== 1) return;
-    if (e.touches[0].clientX > 30) return;
+
+    // From the very edge it always works. Further in it works too, as
+    // long as the finger didn't start on something that scrolls sideways.
+    const fromEdge = e.touches[0].clientX <= 44;
+    if (!fromEdge && e.target && e.target.closest && e.target.closest(SIDEWAYS)) return;
+
     if (document.getElementById('storyViewer')?.classList.contains('active')) return;
     if (document.getElementById('editorOverlay')?.classList.contains('active')) return;
     if (document.getElementById('lockScreen')?.classList.contains('active')) return;
@@ -2807,6 +2888,7 @@ function startEdgeSwipe() {
     screen = current;
     tracking = true;
     engaged = false;
+    fromEdgeStart = fromEdge;
     startX = e.touches[0].clientX;
     startY = e.touches[0].clientY;
     dx = 0;
@@ -2823,7 +2905,11 @@ function startEdgeSwipe() {
       // Wait until the direction is clear. Mostly-vertical means they
       // are scrolling, so let go and never fight the page.
       if (Math.abs(dy) > Math.abs(dx)) { tracking = false; return; }
-      if (dx < 12) return;
+      // An edge swipe can be gentle. One starting mid-screen has to be
+      // clearly sideways, so it never steals an ordinary scroll.
+      const threshold = fromEdgeStart ? 12 : 42;
+      if (dx < threshold) return;
+      if (!fromEdgeStart && Math.abs(dx) < Math.abs(dy) * 2) return;
       engaged = true;
 
       // Bring the screen we're going back to up behind this one, so
@@ -3660,18 +3746,35 @@ function setupStoryGestures(story) {
   let startX = 0, startY = 0;
   let pinch = null;
   let scale = 1;
+  let panX = 0, panY = 0;     // where the zoomed picture has been dragged to
+  let pan = null;             // one-finger drag while zoomed
   let usedTouch = false;      // once true, ignore Safari's fake mouse events
   let swipe = null;           // vertical dismiss gesture in progress
   const viewer = document.getElementById('storyViewer');
 
   const dist = (a, b) => Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
 
+  function applyTransform() {
+    img.style.transform = `translate(${panX}px, ${panY}px) scale(${scale})`;
+  }
+
   function resetZoom(animate = true) {
-    scale = 1;
+    scale = 1; panX = 0; panY = 0;
     img.classList.toggle('settling', animate);
     img.classList.remove('zooming');
-    img.style.transform = 'scale(1)';
+    applyTransform();
     setTimeout(() => img.classList.remove('settling'), 300);
+  }
+
+  const isZoomed = () => scale > 1.02;
+
+  // Don't let the picture be dragged completely off the screen.
+  function clampPan() {
+    const r = img.getBoundingClientRect();
+    const limitX = Math.max(0, (r.width * scale - window.innerWidth) / 2 + 40);
+    const limitY = Math.max(0, (r.height * scale - window.innerHeight) / 2 + 40);
+    panX = Math.max(-limitX, Math.min(limitX, panX));
+    panY = Math.max(-limitY, Math.min(limitY, panY));
   }
 
   function beginPinch(t0, t1) {
@@ -3690,7 +3793,12 @@ function setupStoryGestures(story) {
     img.classList.add('zooming');
     img.classList.remove('settling');
 
-    pinch = { startDist: dist(t0, t1), startScale: scale };
+    pinch = {
+      startDist: dist(t0, t1),
+      startScale: scale,
+      startPanX: panX, startPanY: panY,
+      midX: midX, midY: midY,
+    };
   }
 
   nav.addEventListener('touchstart', (e) => {
@@ -3706,6 +3814,15 @@ function setupStoryGestures(story) {
       swipe = null;
       startX = e.touches[0].clientX;
       startY = e.touches[0].clientY;
+
+      // While zoomed in, a finger moves the picture around rather than
+      // tapping through to the next story.
+      if (isZoomed()) {
+        pan = { x: e.touches[0].clientX, y: e.touches[0].clientY, startPanX: panX, startPanY: panY };
+        pauseStory();
+        return;
+      }
+
       clearTimeout(holdTimer);
       holdTimer = setTimeout(() => { didHold = true; pauseStory(); }, HOLD_MS);
     }
@@ -3715,8 +3832,24 @@ function setupStoryGestures(story) {
     if (pinch && e.touches.length === 2) {
       e.preventDefault();
       const d = dist(e.touches[0], e.touches[1]);
-      scale = Math.min(4, Math.max(1, pinch.startScale * (d / pinch.startDist)));
-      img.style.transform = `scale(${scale})`;
+      scale = Math.min(5, Math.max(1, pinch.startScale * (d / pinch.startDist)));
+
+      // Let the picture follow the fingers as they move, not just spread.
+      const midX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+      const midY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+      panX = pinch.startPanX + (midX - pinch.midX);
+      panY = pinch.startPanY + (midY - pinch.midY);
+      clampPan();
+      applyTransform();
+      return;
+    }
+
+    if (pan && e.touches.length === 1) {
+      e.preventDefault();
+      panX = pan.startPanX + (e.touches[0].clientX - pan.x);
+      panY = pan.startPanY + (e.touches[0].clientY - pan.y);
+      clampPan();
+      applyTransform();
       return;
     }
     if (e.touches.length === 1) {
@@ -3724,7 +3857,7 @@ function setupStoryGestures(story) {
       const dy = e.touches[0].clientY - startY;
 
       // Downward drag = dismiss, like Instagram. Follows your finger.
-      if (swipe || (dy > 14 && Math.abs(dy) > Math.abs(dx) * 1.2)) {
+      if (!isZoomed() && (swipe || (dy > 14 && Math.abs(dy) > Math.abs(dx) * 1.2))) {
         e.preventDefault();
         if (!swipe) {
           swipe = true;
@@ -3751,6 +3884,13 @@ function setupStoryGestures(story) {
   function endTouch(e) {
     clearTimeout(holdTimer);
 
+    // Let go after moving a zoomed picture: stay where you put it.
+    if (pan) {
+      pan = null;
+      resumeStory();
+      return;
+    }
+
     // Released a downward swipe: far enough closes, otherwise spring back.
     if (swipe) {
       const endY = (e.changedTouches && e.changedTouches[0]) ? e.changedTouches[0].clientY : startY;
@@ -3772,17 +3912,26 @@ function setupStoryGestures(story) {
     }
 
     if (pinch) {
-      // Second finger lifted, or both. Snap back and carry on.
       if (e.touches.length < 2) {
         pinch = null;
-        resetZoom(true);
+        // Barely zoomed? Spring back. Properly zoomed? Stay there so you
+        // can look around, until you pinch back down.
+        if (scale < 1.15) resetZoom(true);
+        else { clampPan(); applyTransform(); }
       }
-      if (e.touches.length === 0) resumeStory();
+      if (e.touches.length === 0 && !isZoomed()) resumeStory();
       return;
     }
 
     if (didHold) {
       didHold = false;
+      resumeStory();
+      return;
+    }
+
+    // A tap while zoomed in takes you back out rather than skipping on.
+    if (isZoomed()) {
+      resetZoom(true);
       resumeStory();
       return;
     }
@@ -3916,6 +4065,9 @@ function refreshStoryLikeUi() {
 
 function stepStory(dir) {
   clearTimeout(storyTimer);
+  // A new picture always starts un-zoomed.
+  const media = document.getElementById('storyImg') || document.getElementById('storyVideo');
+  if (media) { media.style.transform = ''; media.classList.remove('zooming', 'settling'); }
   const list = storiesOf(state.storyViewUser);
   const next = state.storyIndex + dir;
   if (next < 0) { state.storyIndex = 0; storyElapsed = 0; renderStoryFrame(); return; }
@@ -4306,10 +4458,12 @@ function openEditor(opts = {}) {
   renderEditorTools();     // toolbar: rebuilt on every change
   sizeEditorCanvas();
   attachEditorDrawing();   // handlers on the one canvas that stays
+  watchEditorSize();
   redrawEditor();
 }
 
 function closeEditor() {
+  if (editor._sizeWatcher) { editor._sizeWatcher.disconnect(); editor._sizeWatcher = null; }
   editor.open = false;
   editor.bgImage = null;
   editor.ops = [];
@@ -4360,6 +4514,26 @@ function renderEditorShell() {
 }
 
 // Only the toolbar. Safe to call as often as you like.
+function resizeEditorToFit() {
+  if (!editor.open) return;
+  const canvas = document.getElementById('editorCanvas');
+  if (!canvas) return;
+  const before = canvas.width + 'x' + canvas.height;
+  sizeEditorCanvas();
+  if (canvas.width + 'x' + canvas.height !== before) redrawEditor();
+}
+
+function watchEditorSize() {
+  const wrap = document.getElementById('edCanvasWrap');
+  if (!wrap || typeof ResizeObserver === 'undefined') return;
+  if (editor._sizeWatcher) editor._sizeWatcher.disconnect();
+  editor._sizeWatcher = new ResizeObserver(() => {
+    // Wait a frame so the browser has finished laying the toolbar out.
+    requestAnimationFrame(resizeEditorToFit);
+  });
+  editor._sizeWatcher.observe(wrap);
+}
+
 function renderEditorTools() {
   const tools = document.getElementById('edTools');
   if (!tools) return;
@@ -4435,6 +4609,10 @@ function renderEditorTools() {
   });
 
   wireEditorUi();
+
+  // Opening the text or sticker panel makes the toolbar taller, which
+  // squashes the canvas. Give it its proper shape back.
+  requestAnimationFrame(resizeEditorToFit);
 }
 
 // Kept so older call sites keep working: it now only touches the toolbar.
@@ -5537,15 +5715,17 @@ function openThemeSettings() {
 // Shown once after an update, then never again until the next one.
 // Add the newest release at the top; older entries can stay.
 // ===============================================================
-const APP_VERSION = '2.9';
+const APP_VERSION = '2.9.1';
 
 const RELEASE_NOTES = {
-  '2.9': {
-    title: 'Full screen, and a little drift',
+  '2.9.1': {
+    title: 'Gestures back, and a countdown',
     lines: [
-      'Stories fill the whole screen now',
-      'A photo that does not fit gets a soft blurred edge instead of black bars',
-      'The colours shift gently as you scroll',
+      'Hold, pinch, tap and swipe down work again in stories',
+      'Zoom in and move the picture around with your finger',
+      'Swipe right from anywhere to go back',
+      'The timeline card counts down to whatever comes next',
+      'More movement in the colours as you scroll',
     ],
   },
   '2.8.1': {
