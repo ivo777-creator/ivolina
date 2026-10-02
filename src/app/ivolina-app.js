@@ -1,5 +1,5 @@
 // ===============================================================
-// IVOLINA v2.8.1 — vault memory fix, hidden save, no stale pages
+// IVOLINA v2.9 — full-screen stories, moving background
 // ===============================================================
 import { createClient } from '@supabase/supabase-js';
 
@@ -407,7 +407,12 @@ body {
 body::before {
   content: '';
   position: fixed;
-  inset: -10%;
+  inset: -16%;
+  /* Follows the scroll at a fraction of its speed, and drifts slowly
+     on its own so the screen is never quite static. */
+  transform: translate3d(0, var(--aurora-top-y, 0px), 0);
+  will-change: transform;
+  animation: auroraDriftA 42s ease-in-out infinite alternate;
   background:
     radial-gradient(105% 72% at 14% -6%, var(--aurora-1), transparent 66%),
     radial-gradient(100% 66% at 92% 4%, var(--aurora-2), transparent 64%),
@@ -423,7 +428,10 @@ body::before {
 body::after {
   content: '';
   position: fixed;
-  inset: -10%;
+  inset: -16%;
+  transform: translate3d(0, var(--aurora-bottom-y, 0px), 0);
+  will-change: transform;
+  animation: auroraDriftB 56s ease-in-out infinite alternate;
   background:
     radial-gradient(110% 62% at 10% 106%, var(--aurora-2), transparent 68%),
     radial-gradient(100% 58% at 94% 94%, var(--aurora-1), transparent 66%),
@@ -666,21 +674,69 @@ textarea.input { resize: none; min-height: 100px; line-height: 1.5; }
 
 .story-viewer { position: fixed; inset: 0; background: #000; z-index: 300; display: none; flex-direction: column; }
 .story-viewer.active { display: flex; }
-.story-progress { display: flex; gap: 4px; padding: calc(env(safe-area-inset-top) + 10px) 12px 8px; }
+.story-progress {
+  position: absolute; top: 0; left: 0; right: 0; z-index: 4;
+  display: flex; gap: 4px; padding: calc(env(safe-area-inset-top) + 10px) 12px 8px;
+}
 .story-progress-bar { flex: 1; height: 3px; background: rgba(255,255,255,0.25); border-radius: 2px; overflow: hidden; }
 .story-progress-fill { height: 100%; width: 0%; background: #fff; border-radius: 2px; }
 .story-progress-fill.done { width: 100%; }
-.story-viewer-head { display: flex; align-items: center; gap: 10px; padding: 4px 16px 10px; color: #fff; }
+.story-viewer-head {
+  position: absolute; left: 0; right: 0; z-index: 4;
+  top: calc(env(safe-area-inset-top) + 22px);
+  display: flex; align-items: center; gap: 10px; padding: 4px 16px 10px; color: #fff;
+}
+/* A soft darkening at the top and bottom so white text stays readable
+   over a bright photo, without putting a bar over the picture. */
+.story-scrim-top {
+  position: absolute; top: 0; left: 0; right: 0; z-index: 3; pointer-events: none;
+  height: calc(env(safe-area-inset-top) + 130px);
+  background: linear-gradient(180deg, rgba(0,0,0,0.62), rgba(0,0,0,0.26) 55%, transparent);
+}
+.story-scrim-bottom {
+  position: absolute; bottom: 0; left: 0; right: 0; z-index: 3; pointer-events: none;
+  height: calc(env(safe-area-inset-bottom) + 170px);
+  background: linear-gradient(0deg, rgba(0,0,0,0.60), rgba(0,0,0,0.22) 55%, transparent);
+}
 .story-viewer-head .med-avatar { border: 1px solid rgba(255,255,255,0.3); }
 .story-viewer-name {  font-size: 16px; }
 .story-viewer-time { font-size: 12px; color: rgba(255,255,255,0.6); }
 .story-viewer-close { margin-left: auto; background: none; border: none; color: #fff; font-size: 28px; cursor: pointer; line-height: 1; padding: 4px 8px; }
-.story-stage { flex: 1; position: relative; display: flex; align-items: center; justify-content: center; overflow: hidden; }
-.story-stage img { max-width: 100%; max-height: 100%; object-fit: contain; animation: storyIn 0.35s cubic-bezier(0.16,1,0.3,1); }
+/* The picture owns the whole screen. */
+.story-stage {
+  position: absolute; inset: 0; z-index: 1;
+  display: flex; align-items: center; justify-content: center; overflow: hidden;
+}
+/* A blurred, enlarged copy of the same picture behind it, so a photo
+   that doesn't match the screen shape still fills it — instead of
+   sitting between two black bars. */
+.story-backdrop {
+  position: absolute; inset: -8%;
+  background-size: cover; background-position: center;
+  filter: blur(34px) saturate(1.25) brightness(0.75);
+  transform: scale(1.12);
+  z-index: 0; pointer-events: none;
+}
+/* Close enough to the screen's shape: fill it completely. */
+.story-stage.fills img, .story-stage.fills video { width: 100%; height: 100%; object-fit: cover; }
+.story-stage img {
+  position: relative; z-index: 1;
+  max-width: 100%; max-height: 100%; object-fit: contain;
+  animation: storyIn 0.35s cubic-bezier(0.16,1,0.3,1);
+}
 .story-nav { position: absolute; inset: 0; display: flex; }
 .story-nav div { flex: 1; }
-.story-caption { padding: 12px 20px calc(env(safe-area-inset-bottom) + 20px); color: #fff;  font-size: 15px; text-align: center; }
-.story-expiry { padding: 0 20px calc(env(safe-area-inset-bottom) + 14px); text-align: center; color: rgba(255,255,255,0.45); font-size: 11px; }
+.story-caption {
+  position: absolute; left: 0; right: 0; z-index: 4;
+  bottom: calc(env(safe-area-inset-bottom) + 46px);
+  padding: 0 24px; color: #fff; font-size: 15px; text-align: center;
+  text-shadow: 0 1px 12px rgba(0,0,0,0.6);
+}
+.story-expiry {
+  position: absolute; left: 0; right: 0; z-index: 4;
+  bottom: calc(env(safe-area-inset-bottom) + 16px);
+  padding: 0 20px; text-align: center; color: rgba(255,255,255,0.6); font-size: 11px;
+}
 .story-delete { background: none; border: none; color: rgba(255,255,255,0.55); font-size: 12px; cursor: pointer; font-family: inherit; text-decoration: underline; }
 
 .story-preview-img { width: 100%; max-height: 46vh; object-fit: contain; border-radius: 18px; background: #000; margin-bottom: 16px; display: block; }
@@ -753,6 +809,7 @@ textarea.input { resize: none; min-height: 100px; line-height: 1.5; }
 
 /* ===== STORY VIDEO (v2.2.3) ===== */
 .story-stage video {
+  position: relative; z-index: 1;
   max-width: 100%; max-height: 100%; object-fit: contain;
   transform-origin: 50% 50%; will-change: transform; touch-action: none;
   animation: storyIn 0.35s cubic-bezier(0.16,1,0.3,1);
@@ -1188,6 +1245,19 @@ html[data-theme="light"] .top-blur {
   display: flex; align-items: center; justify-content: center;
 }
 
+/* The slow breathing. Deliberately small — if you notice it, it's too much. */
+@keyframes auroraDriftA {
+  from { background-position: 0% 0%, 100% 0%, 50% 20%, 50% 0%; }
+  to   { background-position: 8% 4%, 92% 6%, 56% 26%, 46% 5%; }
+}
+@keyframes auroraDriftB {
+  from { background-position: 0% 100%, 100% 96%, 50% 78%; }
+  to   { background-position: 9% 94%, 90% 100%, 44% 84%; }
+}
+@media (prefers-reduced-motion: reduce) {
+  body::before, body::after { animation: none; transform: none; }
+}
+
 /* ===== CHAT ===== */
 .chat-divider { text-align: center; margin: 28px 0 16px; font-weight: 400; color: var(--text-muted); font-size: 13px; display: flex; align-items: center; gap: 10px; }
 .chat-divider::before, .chat-divider::after { content: ''; flex: 1; height: 1px; background: var(--glass-border); }
@@ -1414,7 +1484,7 @@ const HTML = `
       <div class="settings-row" id="logoutRow"><span class="settings-label" style="color: #ff95a5;">logout</span><span class="settings-value">›</span></div>
     </div>
     <div style="text-align: center; margin-top: 32px; color: var(--text-muted); font-size: 12px; font-weight: 400;">
-      ivolina v2.8.1 · made with love
+      ivolina v2.9 · made with love
     </div>
   </div>
 </div>
@@ -2658,6 +2728,46 @@ const BACK_TARGETS = {
   'screen-settings': 'home',
 };
 
+
+// ---------------------------------------------------------------
+// The colour moves with the page, but slower than it — the top
+// layer lags behind, the bottom one runs slightly ahead. Both are
+// written as CSS variables and applied with a transform, so the
+// browser can do it on the graphics chip instead of repainting.
+// ---------------------------------------------------------------
+function startAuroraParallax() {
+  if (prefersLessMotion()) return;
+
+  let ticking = false;
+  const root = document.body;
+
+  const update = () => {
+    ticking = false;
+    // Someone can turn this on in iOS while the app is open.
+    if (prefersLessMotion()) {
+      root.style.removeProperty('--aurora-top-y');
+      root.style.removeProperty('--aurora-bottom-y');
+      return;
+    }
+    const y = window.scrollY || 0;
+    // Gentle, and capped so a very long page doesn't drag the colour
+    // completely off the screen.
+    const top = Math.max(-90, Math.min(90, y * 0.12));
+    const bottom = Math.max(-140, Math.min(140, -y * 0.07));
+    root.style.setProperty('--aurora-top-y', top.toFixed(1) + 'px');
+    root.style.setProperty('--aurora-bottom-y', bottom.toFixed(1) + 'px');
+  };
+
+  const onScroll = () => {
+    if (ticking) return;
+    ticking = true;
+    requestAnimationFrame(update);
+  };
+
+  window.addEventListener('scroll', onScroll, { passive: true });
+  update();
+}
+
 function startEdgeSwipe() {
   let tracking = false;      // finger is down at the edge
   let engaged = false;       // we've decided this really is a back-swipe
@@ -3367,6 +3477,49 @@ function resumeStory() {
   runStoryTimer();
 }
 
+
+// Instagram's rule, more or less: if the picture is close enough to the
+// shape of the screen, fill it — the few pixels lost at the edges are
+// not missed. If it isn't, show all of it and let the blurred copy
+// behind it carry the rest, rather than cutting someone's head off.
+//
+// Where the line sits, measured against a modern iPhone (19.5:9):
+//   a 9:16 camera photo is 22% off   -> fill
+//   a 4:3 portrait photo is 62% off  -> fit
+//   a square photo is 116% off       -> fit
+//   a landscape photo is 189% off    -> fit
+// 35% sits in the gap between the first two.
+const FILL_TOLERANCE = 0.35;
+
+function fitStoryMedia() {
+  const stage = document.getElementById('storyStage');
+  if (!stage) return;
+  const media = stage.querySelector('img, video');
+  if (!media) return;
+
+  const apply = () => {
+    const w = media.naturalWidth || media.videoWidth;
+    const h = media.naturalHeight || media.videoHeight;
+    if (!w || !h) return;
+    const mediaRatio = w / h;
+    const screenRatio = stage.clientWidth / stage.clientHeight;
+    const difference = Math.abs(mediaRatio - screenRatio) / screenRatio;
+    stage.classList.toggle('fills', difference <= FILL_TOLERANCE);
+
+    // When the picture fills the screen there is nothing to see behind it.
+    const backdrop = document.getElementById('storyBackdrop');
+    if (backdrop) backdrop.style.opacity = difference <= FILL_TOLERANCE ? '0' : '1';
+  };
+
+  if (media.tagName === 'IMG') {
+    if (media.complete) apply();
+    else media.addEventListener('load', apply, { once: true });
+  } else {
+    if (media.readyState >= 1) apply();
+    else media.addEventListener('loadedmetadata', apply, { once: true });
+  }
+}
+
 function renderStoryFrame() {
   const who = state.storyViewUser;
   const list = storiesOf(who);
@@ -3414,7 +3567,9 @@ function renderStoryFrame() {
       </div>
       <button class="story-viewer-close" id="storyClose">×</button>
     </div>
+    <div class="story-scrim-top"></div>
     <div class="story-stage" id="storyStage">
+      <div class="story-backdrop" id="storyBackdrop" style="background-image: url('${story.url}')"></div>
       ${story.media_type === 'video'
         ? `<video id="storyVideo" src="${story.url}" playsinline webkit-playsinline
                  preload="auto" draggable="false"></video>`
@@ -3429,6 +3584,7 @@ function renderStoryFrame() {
       ${likeUi}
       <button class="story-keep-btn" id="storyKeep" aria-label="keep this">⤓</button>
     </div>
+    <div class="story-scrim-bottom"></div>
     ${story.caption ? `<div class="story-caption">${escapeHtml(story.caption)}</div>` : ''}
     ${isMine ? '<div class="story-expiry"><button class="story-delete" id="storyDelete">delete now</button></div>' : ''}
   `;
@@ -3478,6 +3634,7 @@ function renderStoryFrame() {
   }
 
   setupStoryGestures(story);
+  fitStoryMedia();
 
   storyElapsed = 0;
   runStoryTimer();
@@ -5380,9 +5537,17 @@ function openThemeSettings() {
 // Shown once after an update, then never again until the next one.
 // Add the newest release at the top; older entries can stay.
 // ===============================================================
-const APP_VERSION = '2.8.1';
+const APP_VERSION = '2.9';
 
 const RELEASE_NOTES = {
+  '2.9': {
+    title: 'Full screen, and a little drift',
+    lines: [
+      'Stories fill the whole screen now',
+      'A photo that does not fit gets a soft blurred edge instead of black bars',
+      'The colours shift gently as you scroll',
+    ],
+  },
   '2.8.1': {
     title: 'Somewhere to keep things',
     lines: [
